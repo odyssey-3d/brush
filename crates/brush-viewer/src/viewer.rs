@@ -1,4 +1,8 @@
-use std::{pin::Pin, sync::Arc};
+use std::{
+    collections::{BTreeSet, HashMap},
+    pin::Pin,
+    sync::Arc,
+};
 
 use async_fn_stream::try_fn_stream;
 use async_std::{
@@ -14,13 +18,14 @@ use brush_train::{eval::EvalStats, train::TrainConfig};
 use burn::backend::Autodiff;
 use burn_wgpu::WgpuDevice;
 use eframe::egui;
+
 use egui_tiles::{Container, Tile, TileId, Tiles};
 use glam::{Quat, Vec3};
 use web_time::Instant;
 
 use crate::{
     orbit_controls::OrbitControls,
-    panels::{DatasetPanel, LoadDataPanel, PresetsPanel, ScenePanel, StatsPanel},
+    panels::{build_panel, panel_title, PanelTypes, ScenePanel},
     train_loop::{self, TrainMessage},
     PaneType, ViewerTree,
 };
@@ -65,12 +70,17 @@ pub(crate) enum ViewerMessage {
         iter: u32,
         eval: EvalStats<PrimaryBackend>,
     },
+    //show training panel
+    ShowTrainingPanel {
+        show: bool,
+    },
 }
 
 pub struct Viewer {
     tree: egui_tiles::Tree<PaneType>,
-    datasets: Option<TileId>,
     tree_ctx: ViewerTree,
+    side_panel: TileId,
+    panels: HashMap<PanelTypes, TileId>,
 }
 
 // TODO: Bit too much random shared state here.
@@ -78,6 +88,8 @@ pub(crate) struct ViewerContext {
     pub dataset: Dataset,
     pub camera: Camera,
     pub controls: OrbitControls,
+
+    pub open_panels: BTreeSet<String>,
 
     device: WgpuDevice,
     ctx: egui::Context,
@@ -156,6 +168,7 @@ impl ViewerContext {
                 glam::vec2(0.5, 0.5),
             ),
             controls: OrbitControls::new(),
+            open_panels: BTreeSet::from(["View Options".to_owned()]),
             device,
             ctx,
             dataset: Dataset::empty(),
@@ -280,26 +293,14 @@ impl Viewer {
         );
 
         #[allow(unused_mut)]
-        let mut sides = vec![
-            tiles.insert_pane(Box::new(LoadDataPanel::new())),
-            tiles.insert_pane(Box::new(PresetsPanel::new())),
-            tiles.insert_pane(Box::new(StatsPanel::new(
-                device.clone(),
-                state.adapter.clone(),
-            ))),
+        let dummy = tiles.insert_pane(build_panel(&PanelTypes::Dummy, device.clone()));
+        let sides = vec![
+            tiles.insert_pane(build_panel(&PanelTypes::ViewOptions, device.clone())),
+            dummy,
         ];
 
-        #[cfg(not(target_family = "wasm"))]
-        {
-            sides.push(tiles.insert_pane(Box::new(crate::panels::RerunPanel::new(device.clone()))));
-        }
-
-        #[cfg(feature = "tracing")]
-        {
-            sides.push(tiles.insert_pane(Box::new(TracingPanel::default())));
-        }
-
         let side_panel = tiles.insert_vertical_tile(sides);
+
         let scene_pane_id = tiles.insert_pane(Box::new(scene_pane));
 
         let mut lin = egui_tiles::Linear::new(
@@ -309,15 +310,48 @@ impl Viewer {
         lin.shares.set_share(side_panel, 0.4);
 
         let root_container = tiles.insert_container(lin);
-        let tree = egui_tiles::Tree::new("viewer_tree", root_container, tiles);
+        let mut tree = egui_tiles::Tree::new("viewer_tree", root_container, tiles);
+        tree.set_visible(dummy, false);
+
 
         let tree_ctx = ViewerTree { context };
         Viewer {
             tree,
             tree_ctx,
-            datasets: None,
+            side_panel,
+            panels: HashMap::new(),
         }
     }
+}
+
+fn check_for_panel_status(
+    panel_type: &PanelTypes,
+    context: &mut ViewerContext,
+    panels: &mut HashMap<PanelTypes, TileId>,
+    tree: &mut egui_tiles::Tree<PaneType>,
+    side_panel: TileId,
+) -> bool {
+    let panel = panels.get(panel_type);
+    if context.open_panels.contains(panel_title(panel_type)) {
+        if panel.is_none() {
+            println!("Inserting panel {}", panel_title(panel_type));
+            let pane_id = tree
+                .tiles
+                .insert_pane(build_panel(panel_type, context.device.clone()));
+            panels.insert(*panel_type, pane_id);
+            if let Some(Tile::Container(Container::Linear(lin))) = tree.tiles.get_mut(side_panel) {
+                lin.add_child(pane_id);
+            }
+            return true;
+        }
+    } else {
+        if panel.is_some() {
+            tree.remove_recursively(*panel.unwrap());
+            panels.remove(panel_type);
+            return true;
+        }
+    }
+    false
 }
 
 impl eframe::App for Viewer {
@@ -326,14 +360,19 @@ impl eframe::App for Viewer {
             while let Ok(message) = rec.try_recv() {
                 if let ViewerMessage::Dataset { data: _ } = message {
                     // Show the dataset panel if we've loaded one.
-                    if self.datasets.is_none() {
-                        let pane_id = self.tree.tiles.insert_pane(Box::new(DatasetPanel::new()));
-                        self.datasets = Some(pane_id);
+                    if self.panels.get(&PanelTypes::Datasets).is_none() {
+                        let panel = build_panel(
+                            &PanelTypes::Datasets,
+                            self.tree_ctx.context.device.clone(),
+                        );
+                        self.tree_ctx.context.open_panels.insert(panel.title());
+                        let pane_id = self.tree.tiles.insert_pane(panel);
                         if let Some(Tile::Container(Container::Linear(lin))) =
                             self.tree.tiles.get_mut(self.tree.root().unwrap())
                         {
                             lin.add_child(pane_id);
                         }
+                        self.panels.insert(PanelTypes::Datasets, pane_id);
                     }
                 }
 
@@ -350,11 +389,31 @@ impl eframe::App for Viewer {
             }
         }
 
+        let panels_to_check = vec![
+            PanelTypes::TrainingOptions,
+            PanelTypes::Stats,
+            PanelTypes::Presets,
+            PanelTypes::Rerun,
+        ];
+
+        for panel in panels_to_check {
+            if check_for_panel_status(
+                &panel,
+                &mut self.tree_ctx.context,
+                &mut self.panels,
+                &mut self.tree,
+                self.side_panel,
+            ) {
+                ctx.request_repaint();
+            }
+        }
+
         egui::CentralPanel::default().show(ctx, |ui| {
             // Close when pressing escape (in a native viewer anyway).
             if ui.input(|r| r.key_pressed(egui::Key::Escape)) {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
+
             self.tree.ui(&mut self.tree_ctx, ui);
         });
     }

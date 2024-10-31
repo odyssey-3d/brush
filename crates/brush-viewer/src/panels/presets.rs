@@ -1,3 +1,4 @@
+use super::{panel_title, PanelTypes};
 use crate::{viewer::ViewerContext, ViewerPanel};
 use egui::Hyperlink;
 
@@ -17,7 +18,7 @@ impl PresetsPanel {
 
 impl ViewerPanel for PresetsPanel {
     fn title(&self) -> String {
-        "Presets".to_owned()
+        panel_title(&PanelTypes::Presets).to_owned()
     }
 
     fn on_message(&mut self, _: crate::viewer::ViewerMessage, _: &mut ViewerContext) {}

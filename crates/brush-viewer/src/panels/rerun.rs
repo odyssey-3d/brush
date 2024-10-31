@@ -1,10 +1,12 @@
 use std::{future::Future, pin::Pin, sync::Arc};
 
+use super::{panel_title, PanelTypes};
 use crate::{
     train_loop::TrainMessage,
     viewer::{ViewerContext, ViewerMessage},
     ViewerPanel,
 };
+
 use async_std::{
     channel::{self, Sender},
     task,
@@ -359,7 +361,7 @@ impl RerunPanel {}
 
 impl ViewerPanel for RerunPanel {
     fn title(&self) -> String {
-        "Rerun".to_owned()
+        panel_title(&PanelTypes::Rerun).to_owned()
     }
 
     fn on_message(&mut self, message: crate::viewer::ViewerMessage, context: &mut ViewerContext) {

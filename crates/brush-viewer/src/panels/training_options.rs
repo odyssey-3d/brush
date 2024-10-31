@@ -1,3 +1,4 @@
+use super::{panel_title, PanelTypes};
 use crate::{viewer::ViewerContext, ViewerPanel};
 use brush_dataset::{LoadDatasetArgs, LoadInitArgs};
 use brush_train::train::TrainConfig;
@@ -9,7 +10,7 @@ enum Quality {
     Normal,
 }
 
-pub(crate) struct LoadDataPanel {
+pub(crate) struct TrainingOptionsPanel {
     max_train_resolution: Option<u32>,
     max_frames: Option<usize>,
     eval_split_every: Option<usize>,
@@ -17,7 +18,7 @@ pub(crate) struct LoadDataPanel {
     quality: Quality,
 }
 
-impl LoadDataPanel {
+impl TrainingOptionsPanel {
     pub(crate) fn new() -> Self {
         Self {
             // High resolution performance just isn't great at the moment... limit this for now by default.
@@ -30,9 +31,9 @@ impl LoadDataPanel {
     }
 }
 
-impl ViewerPanel for LoadDataPanel {
+impl ViewerPanel for TrainingOptionsPanel {
     fn title(&self) -> String {
-        "Load data".to_owned()
+        panel_title(&PanelTypes::TrainingOptions).to_owned()
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, context: &mut ViewerContext) {

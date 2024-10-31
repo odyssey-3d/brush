@@ -1,3 +1,4 @@
+use super::{panel_title, PanelTypes};
 use crate::{
     viewer::{ViewerContext, ViewerMessage},
     ViewerPanel,
@@ -36,7 +37,7 @@ impl DatasetPanel {
 
 impl ViewerPanel for DatasetPanel {
     fn title(&self) -> String {
-        "Dataset".to_owned()
+        panel_title(&PanelTypes::Datasets).to_owned()
     }
 
     fn on_message(&mut self, message: ViewerMessage, context: &mut ViewerContext) {

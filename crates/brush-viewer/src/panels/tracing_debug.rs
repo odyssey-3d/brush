@@ -7,7 +7,7 @@ pub(crate) struct TracingPanel {
 
 impl ViewerPane for TracingPanel {
     fn title(&self) -> String {
-        "Load data".to_owned()
+        "Tracing".to_owned()
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _: &mut ViewerContext) -> egui_tiles::UiResponse {

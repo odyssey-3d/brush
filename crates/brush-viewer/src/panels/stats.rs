@@ -1,3 +1,4 @@
+use super::{panel_title, PanelTypes};
 use crate::{
     viewer::{ViewerContext, ViewerMessage},
     ViewerPanel,
@@ -60,7 +61,7 @@ fn bytes_format(bytes: u64) -> String {
 
 impl ViewerPanel for StatsPanel {
     fn title(&self) -> String {
-        "Stats".to_owned()
+        panel_title(&PanelTypes::Stats).to_owned()
     }
 
     fn on_message(&mut self, message: crate::viewer::ViewerMessage, _: &mut ViewerContext) {
