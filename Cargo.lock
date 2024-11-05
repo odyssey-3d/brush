@@ -929,7 +929,6 @@ dependencies = [
  "tracing-subscriber",
  "tracing-tracy",
  "tracing-wasm",
- "transform-gizmo-egui",
  "web-sys",
  "web-time",
  "wgpu",
@@ -3205,7 +3204,6 @@ version = "0.28.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "779ae4bf7e8421cf91c0b3b64e7e8b40b862fba4d393f59150042de7c4965a94"
 dependencies = [
- "mint",
  "serde",
 ]
 
@@ -4100,12 +4098,6 @@ dependencies = [
  "adler2",
  "simd-adler32",
 ]
-
-[[package]]
-name = "mint"
-version = "0.5.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e53debba6bda7a793e5f99b8dacf19e626084f525f7829104ba9898f367d85ff"
 
 [[package]]
 name = "mio"
@@ -7172,30 +7164,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "68613466112302fdbeabc5fa55f7d57462a0b247d5a6b7d7e09401fb471a144d"
 dependencies = [
  "cc",
-]
-
-[[package]]
-name = "transform-gizmo"
-version = "0.3.0"
-source = "git+https://github.com/urholaukkarinen/transform-gizmo#7556fb38b37f3772c57dd0fae6a276976d314f9b"
-dependencies = [
- "ahash",
- "ecolor",
- "emath",
- "enum_dispatch",
- "enumset",
- "epaint",
- "glam",
- "mint",
-]
-
-[[package]]
-name = "transform-gizmo-egui"
-version = "0.3.0"
-source = "git+https://github.com/urholaukkarinen/transform-gizmo#7556fb38b37f3772c57dd0fae6a276976d314f9b"
-dependencies = [
- "egui",
- "transform-gizmo",
 ]
 
 [[package]]

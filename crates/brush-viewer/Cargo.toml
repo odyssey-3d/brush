@@ -21,7 +21,6 @@ burn-jit.workspace = true
 image.workspace = true
 anyhow.workspace = true
 eframe.workspace = true
-transform-gizmo-egui.workspace = true
 web-sys.workspace = true
 egui.workspace = true
 egui_tiles.workspace = true

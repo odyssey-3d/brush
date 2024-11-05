@@ -2,9 +2,6 @@ use brush_dataset::splat_export;
 use egui::epaint::mutex::RwLock as EguiRwLock;
 
 use std::sync::Arc;
-use transform_gizmo_egui::math::{DMat4, DVec3};
-use transform_gizmo_egui::math::{DQuat, Transform};
-use transform_gizmo_egui::prelude::*;
 
 use brush_render::gaussian_splats::Splats;
 use eframe::egui_wgpu::Renderer;
@@ -37,11 +34,6 @@ pub(crate) struct ScenePanel {
     queue: Arc<wgpu::Queue>,
     device: Arc<wgpu::Device>,
     renderer: Arc<EguiRwLock<Renderer>>,
-
-    gizmo: Gizmo,
-    scale: DVec3,
-    rotation: DQuat,
-    translation: DVec3,
 }
 
 impl ScenePanel {
@@ -62,69 +54,6 @@ impl ScenePanel {
             queue,
             device,
             renderer,
-            gizmo: Gizmo::default(),
-            scale: DVec3::ONE,
-            rotation: DQuat::IDENTITY,
-            translation: DVec3::ZERO,
-        }
-    }
-
-    fn draw_gizmo(&mut self, ui: &mut egui::Ui, context: &mut ViewerContext, size: glam::UVec2) {
-        let mut viewport = ui.clip_rect();
-        viewport.max.x = viewport.left() + size.x as f32;
-        viewport.max.y = viewport.top() + size.y as f32;
-        // viewport.min.x = viewport.max.x - 200.0;
-        // viewport.min.y = viewport.max.y - 200.0;
-
-        let projection_matrix = DMat4::perspective_infinite_reverse_lh(
-            context.camera.fov.y as f64,
-            (viewport.width() / viewport.height()).into(),
-            0.1,
-        );
-
-        // Fixed camera position
-        // let view_matrix = context.camera.world_to_local().as_dmat4();
-        let view_matrix = glam::DMat4::look_at_lh(
-            context.camera.position.into(),
-            context.controls.focus.into(),
-            glam::DVec3::Y,
-        );
-
-        // Ctrl toggles snapping
-        let snapping = ui.input(|input| input.modifiers.ctrl);
-
-        self.gizmo.update_config(GizmoConfig {
-            view_matrix: view_matrix.into(),
-            projection_matrix: projection_matrix.into(),
-            viewport,
-            modes: GizmoMode::all(),
-            orientation: GizmoOrientation::Local,
-            snapping,
-            visuals: GizmoVisuals {
-                gizmo_size: 100.0,
-                stroke_width: 2.0,
-                ..Default::default()
-            },
-            ..Default::default()
-        });
-
-        let mut transform =
-            Transform::from_scale_rotation_translation(self.scale, self.rotation, self.translation);
-
-        if let Some((_, new_transforms)) = self.gizmo.interact(ui, &[transform]) {
-            for (new_transform, transform) in
-                new_transforms.iter().zip(std::iter::once(&mut transform))
-            {
-                *transform = *new_transform;
-            }
-
-            // self.scale = transform.scale.into();
-            // self.rotation = transform.rotation.into();
-            // self.translation = transform.translation.into();
-        }
-
-        {
-            self.gizmo.draw();
         }
     }
 
@@ -139,7 +68,7 @@ impl ScenePanel {
         // If this viewport is re-rendering.
         if ui.ctx().has_requested_repaint() && self.dirty {
             let _span = trace_span!("Render splats").entered();
-            let splat_render_size = glam::uvec2(1920, 1600);
+            let splat_render_size = glam::uvec2(1024,1024);
             let (img, _) = splats.render(&context.camera, splat_render_size, background, true);
 
             let mut encoder = self
@@ -214,7 +143,7 @@ impl ScenePanel {
         &mut self,
         ui: &mut egui::Ui,
         context: &mut ViewerContext,
-        splats: &Splats<brush_render::PrimaryBackend>,   
+        splats: &Splats<brush_render::PrimaryBackend>,
     ) -> egui::InnerResponse<()> {
         ui.horizontal(|ui| {
             if self.is_training {
@@ -371,7 +300,6 @@ runs consider using the native app."#,
                     let size = glam::uvec2(size.x.round() as u32, size.y.round() as u32);
                     let rect = self.update_camera_controls(ui, size, context);
                     self.draw_splats(ui, context, rect, &splats, context.dataset.train.background);
-                    // self.draw_gizmo(ui, context, size);
 
                     self.show_splat_options(ui, context, &splats);
                 }

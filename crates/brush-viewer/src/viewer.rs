@@ -25,7 +25,7 @@ use web_time::Instant;
 
 use crate::{
     orbit_controls::OrbitControls,
-    panels::{build_panel, panel_title, PanelTypes, ScenePanel},
+    panels::{build_panel, panel_title, PanelTypes, ScenePanel, StatsPanel},
     train_loop::{self, TrainMessage},
     PaneType, ViewerTree,
 };
@@ -399,6 +399,7 @@ impl Viewer {
         let dummy = tiles.insert_pane(build_panel(&PanelTypes::Dummy, device.clone()));
         let sides = vec![
             tiles.insert_pane(build_panel(&PanelTypes::ViewOptions, device.clone())),
+            tiles.insert_pane(Box::new(StatsPanel::new(device, state.adapter.clone()))),
             dummy,
         ];
 
@@ -501,7 +502,6 @@ impl eframe::App for Viewer {
 
         let panels_to_check = vec![
             PanelTypes::TrainingOptions,
-            PanelTypes::Stats,
             PanelTypes::Presets,
             PanelTypes::Rerun,
         ];

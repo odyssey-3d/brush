@@ -10,10 +10,10 @@ mod viewer_options;
 
 pub(crate) use datasets::*;
 pub(crate) use dummy::*;
-pub(crate) use training_options::*;
 pub(crate) use presets::*;
 pub(crate) use scene::*;
 pub(crate) use stats::*;
+pub(crate) use training_options::*;
 pub(crate) use viewer_options::*;
 
 #[cfg(not(target_family = "wasm"))]
@@ -56,9 +56,8 @@ pub fn build_panel(panel_type: &PanelTypes, device: burn_wgpu::WgpuDevice) -> cr
         PanelTypes::ViewOptions => Box::new(ViewerOptionsPanel::new()),
         PanelTypes::TrainingOptions => Box::new(TrainingOptionsPanel::new()),
         PanelTypes::Presets => Box::new(PresetsPanel::new()),
-        PanelTypes::Stats => Box::new(StatsPanel::new(device)),
         PanelTypes::Rerun => Box::new(RerunPanel::new(device)),
         PanelTypes::Datasets => Box::new(DatasetPanel::new()),
-        PanelTypes::Dummy => Box::new(DummyPanel::new()),
+        _ => Box::new(DummyPanel::new()),
     }
 }
