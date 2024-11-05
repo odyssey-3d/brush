@@ -18,6 +18,7 @@ pub(crate) struct StatsPanel {
     last_eval_psnr: Option<f32>,
 
     training_started: bool,
+    is_loading: bool,
     num_splats: usize,
 
     adapter_info: AdapterInfo,
@@ -33,6 +34,7 @@ impl StatsPanel {
             train_iter_history: VecDeque::with_capacity(5),
             last_eval_psnr: None,
             training_started: false,
+            is_loading: false,
             num_splats: 0,
             adapter_info,
         }
@@ -66,13 +68,17 @@ impl ViewerPanel for StatsPanel {
 
     fn on_message(&mut self, message: crate::viewer::ViewerMessage, _: &mut ViewerContext) {
         match message {
-            ViewerMessage::StartLoading { training } => {
+            ViewerMessage::StartLoading {
+                training,
+                filename: _,
+            } => {
                 self.last_train_step = (Instant::now(), 0);
                 self.train_iter_per_s = 0.0;
                 self.train_iter_history.clear();
                 self.num_splats = 0;
                 self.last_eval_psnr = None;
                 self.training_started = training;
+                self.is_loading = true;
             }
             ViewerMessage::TrainStep {
                 stats: _,
@@ -100,6 +106,9 @@ impl ViewerPanel for StatsPanel {
                     eval.samples.iter().map(|s| s.psnr).sum::<f32>() / (eval.samples.len() as f32);
                 self.last_eval_psnr = Some(avg_psnr);
             }
+            ViewerMessage::DoneLoading { .. } => {
+                self.is_loading = false;
+            }
             _ => {}
         }
     }
@@ -111,7 +120,19 @@ impl ViewerPanel for StatsPanel {
             .striped(true)
             .show(ui, |ui| {
                 ui.label("Splats");
-                ui.label(format!("{:?}", self.num_splats));
+
+                let loading = match self.is_loading {
+                    true => Some(("Loading...").to_string()),
+                    false => None,
+                };
+                ui.label(format!(
+                    "{} {}",
+                    self.num_splats,
+                    loading.unwrap_or_default()
+                ));
+                ui.end_row();
+
+                ui.separator();
                 ui.end_row();
 
                 if self.training_started {
@@ -129,6 +150,8 @@ impl ViewerPanel for StatsPanel {
                     } else {
                         "--".to_owned()
                     });
+                    ui.end_row();
+                    ui.separator();
                     ui.end_row();
                 }
 

@@ -366,7 +366,10 @@ impl ViewerPanel for RerunPanel {
 
     fn on_message(&mut self, message: crate::viewer::ViewerMessage, context: &mut ViewerContext) {
         match message {
-            crate::viewer::ViewerMessage::StartLoading { training } => {
+            crate::viewer::ViewerMessage::StartLoading {
+                training,
+                filename: _,
+            } => {
                 if training {
                     if self.visualize.is_some() {
                         self.visualize = Some(Arc::new(VisualizeTools::new()));

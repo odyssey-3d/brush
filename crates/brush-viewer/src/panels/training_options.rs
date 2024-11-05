@@ -39,7 +39,7 @@ impl ViewerPanel for TrainingOptionsPanel {
     fn ui(&mut self, ui: &mut egui::Ui, context: &mut ViewerContext) {
         ui.label("Select a .ply to visualize, or a .zip with training data.");
 
-        if ui.button("Pick a file").clicked() {
+        if ui.button("Pick a file for training").clicked() {
             let load_data_args = LoadDatasetArgs {
                 max_frames: self.max_frames,
                 max_resolution: self.max_train_resolution,

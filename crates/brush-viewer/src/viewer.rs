@@ -40,6 +40,7 @@ pub(crate) enum ViewerMessage {
     PickFile,
     StartLoading {
         training: bool,
+        filename: String,
     },
     /// Some process errored out, and want to display this error
     /// to the user.
@@ -90,12 +91,57 @@ pub(crate) struct ViewerContext {
     pub controls: OrbitControls,
 
     pub open_panels: BTreeSet<String>,
+    pub filename: Option<String>,
 
     device: WgpuDevice,
     ctx: egui::Context,
 
     sender: Option<Sender<TrainMessage>>,
     receiver: Option<Receiver<ViewerMessage>>,
+}
+
+fn process_loading_loop(
+    device: WgpuDevice,
+) -> Pin<Box<impl Stream<Item = anyhow::Result<ViewerMessage>>>> {
+    let stream = try_fn_stream(|emitter| async move {
+        let _ = emitter.emit(ViewerMessage::PickFile).await;
+        log::warn!("Start picking file");
+        let picked = rrfd::pick_file().await?;
+        let name = picked.file_name();
+
+        log::warn!("Got file {name}");
+
+        if name.contains(".ply") {
+            let data = picked.read().await;
+
+            let _ = emitter
+                .emit(ViewerMessage::StartLoading {
+                    training: false,
+                    filename: name,
+                })
+                .await;
+            let splat_stream =
+                splat_import::load_splat_from_ply::<PrimaryBackend>(data, device.clone());
+            let mut splat_stream = std::pin::pin!(splat_stream);
+            while let Some(splats) = splat_stream.next().await {
+                emitter
+                    .emit(ViewerMessage::Splats {
+                        iter: 0, // For viewing just use "training step 0", bit weird.
+                        splats: Box::new(splats?),
+                    })
+                    .await;
+            }
+            emitter
+                .emit(ViewerMessage::DoneLoading { training: true })
+                .await;
+        } else {
+            anyhow::bail!("Only .ply files are supported for viewing.")
+        }
+
+        Ok(())
+    });
+
+    Box::pin(stream)
 }
 
 fn process_loop(
@@ -117,7 +163,10 @@ fn process_loop(
             let data = picked.read().await;
 
             let _ = emitter
-                .emit(ViewerMessage::StartLoading { training: false })
+                .emit(ViewerMessage::StartLoading {
+                    training: false,
+                    filename: name,
+                })
                 .await;
             let splat_stream =
                 splat_import::load_splat_from_ply::<PrimaryBackend>(data, device.clone());
@@ -130,10 +179,16 @@ fn process_loop(
                     })
                     .await;
             }
+            emitter
+                .emit(ViewerMessage::DoneLoading { training: true })
+                .await;
         } else if name.contains(".zip") {
             let data = picked.read().await;
             let _ = emitter
-                .emit(ViewerMessage::StartLoading { training: true })
+                .emit(ViewerMessage::StartLoading {
+                    training: true,
+                    filename: name,
+                })
                 .await;
 
             let stream = train_loop::train_loop(
@@ -168,12 +223,16 @@ impl ViewerContext {
                 glam::vec2(0.5, 0.5),
             ),
             controls: OrbitControls::new(),
-            open_panels: BTreeSet::from(["View Options".to_owned()]),
+            open_panels: BTreeSet::from([
+                panel_title(&PanelTypes::ViewOptions).to_owned(),
+                panel_title(&PanelTypes::Stats).to_owned(),
+            ]),
             device,
             ctx,
             dataset: Dataset::empty(),
             receiver: None,
             sender: None,
+            filename: None,
         }
     }
 
@@ -184,6 +243,50 @@ impl ViewerContext {
                 * glam::Vec3::Z
                 * self.dataset.train.bounds(0.0, 0.0).extent.length()
                 * 0.5;
+    }
+
+    pub(crate) fn start_ply_load(&mut self) {
+        let device = self.device.clone();
+        log::info!("Start data load");
+
+        // Create a small channel. We don't want 10 updated splats to be stuck in the queue eating up memory!
+        // Bigger channels could mean the train loop spends less time waiting for the UI though.
+        let (sender, receiver) = async_std::channel::bounded(1);
+
+        self.receiver = Some(receiver);
+        self.sender = None;
+
+        self.dataset = Dataset::empty();
+        let ctx = self.ctx.clone();
+
+        let fut = async move {
+            // Map errors to a viewer message containing thee error.
+            let mut stream = process_loading_loop(device).map(|m| match m {
+                Ok(m) => m,
+                Err(e) => ViewerMessage::Error(Arc::new(e)),
+            });
+
+            // Loop until there are no more messages, processing is done.
+            while let Some(m) = stream.next().await {
+                ctx.request_repaint();
+
+                // If channel is closed, bail.
+                if sender.send(m).await.is_err() {
+                    break;
+                }
+            }
+        };
+
+        #[cfg(target_family = "wasm")]
+        {
+            let fut = crate::async_lib::with_timeout_yield(fut, web_time::Duration::from_millis(5));
+            async_std::task::spawn_local(fut);
+        }
+
+        #[cfg(not(target_family = "wasm"))]
+        {
+            async_std::task::spawn(fut);
+        }
     }
 
     pub(crate) fn start_data_load(
@@ -313,7 +416,6 @@ impl Viewer {
         let mut tree = egui_tiles::Tree::new("viewer_tree", root_container, tiles);
         tree.set_visible(dummy, false);
 
-
         let tree_ctx = ViewerTree { context };
         Viewer {
             tree,
@@ -334,7 +436,6 @@ fn check_for_panel_status(
     let panel = panels.get(panel_type);
     if context.open_panels.contains(panel_title(panel_type)) {
         if panel.is_none() {
-            println!("Inserting panel {}", panel_title(panel_type));
             let pane_id = tree
                 .tiles
                 .insert_pane(build_panel(panel_type, context.device.clone()));
@@ -358,22 +459,31 @@ impl eframe::App for Viewer {
     fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
         if let Some(rec) = self.tree_ctx.context.receiver.clone() {
             while let Ok(message) = rec.try_recv() {
-                if let ViewerMessage::Dataset { data: _ } = message {
-                    // Show the dataset panel if we've loaded one.
-                    if self.panels.get(&PanelTypes::Datasets).is_none() {
-                        let panel = build_panel(
-                            &PanelTypes::Datasets,
-                            self.tree_ctx.context.device.clone(),
-                        );
-                        self.tree_ctx.context.open_panels.insert(panel.title());
-                        let pane_id = self.tree.tiles.insert_pane(panel);
-                        if let Some(Tile::Container(Container::Linear(lin))) =
-                            self.tree.tiles.get_mut(self.tree.root().unwrap())
-                        {
-                            lin.add_child(pane_id);
-                        }
-                        self.panels.insert(PanelTypes::Datasets, pane_id);
+                match message.clone() {
+                    ViewerMessage::StartLoading {
+                        training: _,
+                        filename,
+                    } => {
+                        self.tree_ctx.context.filename = Some(filename);
                     }
+                    ViewerMessage::Dataset { data: _ } => {
+                        // Show the dataset panel if we've loaded one.
+                        if self.panels.get(&PanelTypes::Datasets).is_none() {
+                            let panel = build_panel(
+                                &PanelTypes::Datasets,
+                                self.tree_ctx.context.device.clone(),
+                            );
+                            self.tree_ctx.context.open_panels.insert(panel.title());
+                            let pane_id = self.tree.tiles.insert_pane(panel);
+                            if let Some(Tile::Container(Container::Linear(lin))) =
+                                self.tree.tiles.get_mut(self.tree.root().unwrap())
+                            {
+                                lin.add_child(pane_id);
+                            }
+                            self.panels.insert(PanelTypes::Datasets, pane_id);
+                        }
+                    }
+                    _ => {}
                 }
 
                 for (_, pane) in self.tree.tiles.iter_mut() {
@@ -407,12 +517,39 @@ impl eframe::App for Viewer {
                 ctx.request_repaint();
             }
         }
+        egui::TopBottomPanel::top("wrap_app_top_bar")
+            .frame(egui::Frame::none().inner_margin(4.0))
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    let style = ui.style().clone();
+                    ui.style_mut().text_styles.insert(
+                        egui::TextStyle::Button,
+                        egui::FontId::new(24.0, eframe::epaint::FontFamily::Proportional),
+                    );
+                    ui.style_mut().text_styles.insert(
+                        egui::TextStyle::Heading,
+                        egui::FontId::new(24.0, eframe::epaint::FontFamily::Proportional),
+                    );
+                    if self.tree_ctx.context.filename.is_none() {
+                        ui.heading("<No Scene loaded>");
+                        if ui.button("...").clicked() {
+                            self.tree_ctx.context.start_ply_load();
+                        }
+                    } else {
+                        ui.heading(self.tree_ctx.context.filename.as_ref().unwrap());
+                        if ui.button("...").clicked() {
+                            self.tree_ctx.context.start_ply_load();
+                        }
+                    }
+                    ui.set_style(style);
+                });
+            });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            // Close when pressing escape (in a native viewer anyway).
-            if ui.input(|r| r.key_pressed(egui::Key::Escape)) {
-                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-            }
+            // // Close when pressing escape (in a native viewer anyway).
+            // if ui.input(|r| r.key_pressed(egui::Key::Escape)) {
+            //     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            // }
 
             self.tree.ui(&mut self.tree_ctx, ui);
         });

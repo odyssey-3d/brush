@@ -45,7 +45,10 @@ impl ViewerPanel for DatasetPanel {
             ViewerMessage::PickFile => {
                 self.loading = false;
             }
-            ViewerMessage::StartLoading { training } => {
+            ViewerMessage::StartLoading {
+                training,
+                filename: _,
+            } => {
                 self.loading = training;
             }
             ViewerMessage::Dataset { data: d } => {

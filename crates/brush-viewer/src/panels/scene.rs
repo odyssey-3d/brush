@@ -1,10 +1,15 @@
 use brush_dataset::splat_export;
 use egui::epaint::mutex::RwLock as EguiRwLock;
+
 use std::sync::Arc;
+use transform_gizmo_egui::math::{DMat4, DVec3};
+use transform_gizmo_egui::math::{DQuat, Transform};
+use transform_gizmo_egui::prelude::*;
 
 use brush_render::gaussian_splats::Splats;
 use eframe::egui_wgpu::Renderer;
 use egui::{Color32, Rect};
+
 use glam::Vec2;
 use tracing::trace_span;
 use web_time::Instant;
@@ -32,6 +37,11 @@ pub(crate) struct ScenePanel {
     queue: Arc<wgpu::Queue>,
     device: Arc<wgpu::Device>,
     renderer: Arc<EguiRwLock<Renderer>>,
+
+    gizmo: Gizmo,
+    scale: DVec3,
+    rotation: DQuat,
+    translation: DVec3,
 }
 
 impl ScenePanel {
@@ -52,6 +62,69 @@ impl ScenePanel {
             queue,
             device,
             renderer,
+            gizmo: Gizmo::default(),
+            scale: DVec3::ONE,
+            rotation: DQuat::IDENTITY,
+            translation: DVec3::ZERO,
+        }
+    }
+
+    fn draw_gizmo(&mut self, ui: &mut egui::Ui, context: &mut ViewerContext, size: glam::UVec2) {
+        let mut viewport = ui.clip_rect();
+        viewport.max.x = viewport.left() + size.x as f32;
+        viewport.max.y = viewport.top() + size.y as f32;
+        // viewport.min.x = viewport.max.x - 200.0;
+        // viewport.min.y = viewport.max.y - 200.0;
+
+        let projection_matrix = DMat4::perspective_infinite_reverse_lh(
+            context.camera.fov.y as f64,
+            (viewport.width() / viewport.height()).into(),
+            0.1,
+        );
+
+        // Fixed camera position
+        // let view_matrix = context.camera.world_to_local().as_dmat4();
+        let view_matrix = glam::DMat4::look_at_lh(
+            context.camera.position.into(),
+            context.controls.focus.into(),
+            glam::DVec3::Y,
+        );
+
+        // Ctrl toggles snapping
+        let snapping = ui.input(|input| input.modifiers.ctrl);
+
+        self.gizmo.update_config(GizmoConfig {
+            view_matrix: view_matrix.into(),
+            projection_matrix: projection_matrix.into(),
+            viewport,
+            modes: GizmoMode::all(),
+            orientation: GizmoOrientation::Local,
+            snapping,
+            visuals: GizmoVisuals {
+                gizmo_size: 100.0,
+                stroke_width: 2.0,
+                ..Default::default()
+            },
+            ..Default::default()
+        });
+
+        let mut transform =
+            Transform::from_scale_rotation_translation(self.scale, self.rotation, self.translation);
+
+        if let Some((_, new_transforms)) = self.gizmo.interact(ui, &[transform]) {
+            for (new_transform, transform) in
+                new_transforms.iter().zip(std::iter::once(&mut transform))
+            {
+                *transform = *new_transform;
+            }
+
+            // self.scale = transform.scale.into();
+            // self.rotation = transform.rotation.into();
+            // self.translation = transform.translation.into();
+        }
+
+        {
+            self.gizmo.draw();
         }
     }
 
@@ -59,20 +132,48 @@ impl ScenePanel {
         &mut self,
         ui: &mut egui::Ui,
         context: &mut ViewerContext,
+        rect: Rect,
         splats: &Splats<brush_render::PrimaryBackend>,
         background: glam::Vec3,
     ) {
-        let mut size = ui.available_size();
-        let focal = context.camera.focal(glam::uvec2(1, 1));
-        let aspect_ratio = focal.y / focal.x;
-        if size.x / size.y > aspect_ratio {
-            size.x = size.y * aspect_ratio;
-        } else {
-            size.y = size.x / aspect_ratio;
-        }
-        // Round to 64 pixels. Necesarry for buffer sizes to align.
-        let size = glam::uvec2(size.x.round() as u32, size.y.round() as u32);
+        // If this viewport is re-rendering.
+        if ui.ctx().has_requested_repaint() && self.dirty {
+            let _span = trace_span!("Render splats").entered();
+            let splat_render_size = glam::uvec2(1920, 1600);
+            let (img, _) = splats.render(&context.camera, splat_render_size, background, true);
 
+            let mut encoder = self
+                .device
+                .create_command_encoder(&CommandEncoderDescriptor {
+                    label: Some("viewer encoder"),
+                });
+            self.backbuffer
+                .update_texture(img, &self.device, self.renderer.clone(), &mut encoder);
+            self.queue.submit([encoder.finish()]);
+        }
+
+        if let Some(id) = self.backbuffer.id() {
+            ui.scope(|ui| {
+                ui.painter().rect_filled(rect, 0.0, Color32::BLACK);
+                ui.painter().image(
+                    id,
+                    rect,
+                    Rect {
+                        min: egui::pos2(0.0, 0.0),
+                        max: egui::pos2(1.0, 1.0),
+                    },
+                    Color32::WHITE,
+                );
+            });
+        }
+    }
+
+    fn update_camera_controls(
+        &mut self,
+        ui: &mut egui::Ui,
+        size: glam::UVec2,
+        context: &mut ViewerContext,
+    ) -> Rect {
         let (rect, response) = ui.allocate_exact_size(
             egui::Vec2::new(size.x as f32, size.y as f32),
             egui::Sense::drag(),
@@ -106,36 +207,80 @@ impl ScenePanel {
             );
         }
         self.last_draw = Some(cur_time);
+        rect
+    }
 
-        // If this viewport is re-rendering.
-        if ui.ctx().has_requested_repaint() && self.dirty {
-            let _span = trace_span!("Render splats").entered();
-            let (img, _) = splats.render(&context.camera, size, background, true);
+    fn show_splat_options(
+        &mut self,
+        ui: &mut egui::Ui,
+        context: &mut ViewerContext,
+        splats: &Splats<brush_render::PrimaryBackend>,   
+    ) -> egui::InnerResponse<()> {
+        ui.horizontal(|ui| {
+            if self.is_training {
+                ui.add_space(15.0);
 
-            let mut encoder = self
-                .device
-                .create_command_encoder(&CommandEncoderDescriptor {
-                    label: Some("viewer encoder"),
+                let label = if self.paused {
+                    "⏸ paused"
+                } else {
+                    "⏵ training"
+                };
+
+                if ui.selectable_label(!self.paused, label).clicked() {
+                    self.paused = !self.paused;
+                    context.send_train_message(TrainMessage::Paused(self.paused));
+                }
+
+                ui.add_space(15.0);
+
+                ui.scope(|ui| {
+                    ui.style_mut().visuals.selection.bg_fill = Color32::DARK_RED;
+                    if ui
+                        .selectable_label(self.live_update, "🔴 Live update splats")
+                        .clicked()
+                    {
+                        self.live_update = !self.live_update;
+                    }
                 });
-            self.backbuffer
-                .update_texture(img, &self.device, self.renderer.clone(), &mut encoder);
-            self.queue.submit([encoder.finish()]);
-        }
 
-        if let Some(id) = self.backbuffer.id() {
-            ui.scope(|ui| {
-                ui.painter().rect_filled(rect, 0.0, Color32::BLACK);
-                ui.painter().image(
-                    id,
-                    rect,
-                    Rect {
-                        min: egui::pos2(0.0, 0.0),
-                        max: egui::pos2(1.0, 1.0),
-                    },
-                    Color32::WHITE,
-                );
-            });
-        }
+                ui.add_space(15.0);
+
+                if ui.button("⬆ Export").clicked() {
+                    let splats = splats.clone();
+
+                    let fut = async move {
+                        let file = rrfd::save_file("export.ply").await;
+
+                        // Not sure where/how to show this error if any.
+                        match file {
+                            Err(e) => {
+                                log::error!("Failed to save file: {e}");
+                            }
+                            Ok(file) => {
+                                let data = splat_export::splat_to_ply(splats).await;
+
+                                let data = match data {
+                                    Ok(data) => data,
+                                    Err(e) => {
+                                        log::error!("Failed to serialize file: {e}");
+                                        return;
+                                    }
+                                };
+
+                                if let Err(e) = file.write(&data).await {
+                                    log::error!("Failed to write file: {e}");
+                                }
+                            }
+                        }
+                    };
+
+                    #[cfg(target_family = "wasm")]
+                    async_std::task::spawn_local(fut);
+                    #[cfg(not(target_family = "wasm"))]
+                    async_std::task::spawn(fut);
+                }
+            }
+        })
     }
 }
 
@@ -155,7 +300,10 @@ impl ViewerPanel for ScenePanel {
             ViewerMessage::DoneLoading { training: _ } => {
                 self.is_loading = false;
             }
-            ViewerMessage::StartLoading { training } => {
+            ViewerMessage::StartLoading {
+                training,
+                filename: _,
+            } => {
                 self.is_training = training;
                 self.last_message = None;
                 self.is_loading = true;
@@ -211,73 +359,21 @@ runs consider using the native app."#,
                     ui.label("Error: ".to_owned() + &e.to_string());
                 }
                 ViewerMessage::Splats { iter: _, splats } => {
-                    self.draw_splats(ui, context, &splats, context.dataset.train.background);
+                    let mut size = ui.available_size();
+                    let focal = context.camera.focal(glam::uvec2(1, 1));
+                    let aspect_ratio = focal.y / focal.x;
+                    if size.x / size.y > aspect_ratio {
+                        size.x = size.y * aspect_ratio;
+                    } else {
+                        size.y = size.x / aspect_ratio;
+                    }
+                    // Round to 64 pixels. Necesarry for buffer sizes to align.
+                    let size = glam::uvec2(size.x.round() as u32, size.y.round() as u32);
+                    let rect = self.update_camera_controls(ui, size, context);
+                    self.draw_splats(ui, context, rect, &splats, context.dataset.train.background);
+                    // self.draw_gizmo(ui, context, size);
 
-                    ui.horizontal(|ui| {
-                        if self.is_training {
-                            ui.add_space(15.0);
-
-                            let label = if self.paused {
-                                "⏸ paused"
-                            } else {
-                                "⏵ training"
-                            };
-
-                            if ui.selectable_label(!self.paused, label).clicked() {
-                                self.paused = !self.paused;
-                                context.send_train_message(TrainMessage::Paused(self.paused));
-                            }
-
-                            ui.add_space(15.0);
-
-                            ui.scope(|ui| {
-                                ui.style_mut().visuals.selection.bg_fill = Color32::DARK_RED;
-                                if ui
-                                    .selectable_label(self.live_update, "🔴 Live update splats")
-                                    .clicked()
-                                {
-                                    self.live_update = !self.live_update;
-                                }
-                            });
-
-                            ui.add_space(15.0);
-
-                            if ui.button("⬆ Export").clicked() {
-                                let splats = splats.clone();
-
-                                let fut = async move {
-                                    let file = rrfd::save_file("export.ply").await;
-
-                                    // Not sure where/how to show this error if any.
-                                    match file {
-                                        Err(e) => {
-                                            log::error!("Failed to save file: {e}");
-                                        }
-                                        Ok(file) => {
-                                            let data = splat_export::splat_to_ply(*splats).await;
-
-                                            let data = match data {
-                                                Ok(data) => data,
-                                                Err(e) => {
-                                                    log::error!("Failed to serialize file: {e}");
-                                                    return;
-                                                }
-                                            };
-
-                                            if let Err(e) = file.write(&data).await {
-                                                log::error!("Failed to write file: {e}");
-                                            }
-                                        }
-                                    }
-                                };
-
-                                #[cfg(target_family = "wasm")]
-                                async_std::task::spawn_local(fut);
-                                #[cfg(not(target_family = "wasm"))]
-                                async_std::task::spawn(fut);
-                            }
-                        }
-                    });
+                    self.show_splat_options(ui, context, &splats);
                 }
                 _ => {}
             }
