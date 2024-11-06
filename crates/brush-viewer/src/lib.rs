@@ -7,7 +7,7 @@ use viewer::{ViewerContext, ViewerMessage};
 
 mod async_lib;
 mod burn_texture;
-mod orbit_controls;
+mod camera_controller;
 
 mod panels;
 mod train_loop;

@@ -51,12 +51,23 @@ pub fn panel_title(panel: &PanelTypes) -> &'static str {
     }
 }
 
+fn build_rerun_panel(device: burn_wgpu::WgpuDevice) -> crate::PaneType {
+    #[cfg(not(target_family = "wasm"))]
+    {
+        return Box::new(RerunPanel::new(device));
+    }
+    #[cfg(target_family = "wasm")]
+    {
+        return Box::new(DummyPanel::new());
+    }
+}
+
 pub fn build_panel(panel_type: &PanelTypes, device: burn_wgpu::WgpuDevice) -> crate::PaneType {
     match panel_type {
         PanelTypes::ViewOptions => Box::new(ViewerOptionsPanel::new()),
         PanelTypes::TrainingOptions => Box::new(TrainingOptionsPanel::new()),
         PanelTypes::Presets => Box::new(PresetsPanel::new()),
-        PanelTypes::Rerun => Box::new(RerunPanel::new(device)),
+        PanelTypes::Rerun => build_rerun_panel(device),
         PanelTypes::Datasets => Box::new(DatasetPanel::new()),
         _ => Box::new(DummyPanel::new()),
     }

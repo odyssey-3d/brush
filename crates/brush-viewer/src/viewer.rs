@@ -24,7 +24,7 @@ use glam::{Quat, Vec3};
 use web_time::Instant;
 
 use crate::{
-    orbit_controls::OrbitControls,
+    camera_controller::CameraController,
     panels::{build_panel, panel_title, PanelTypes, ScenePanel, StatsPanel},
     train_loop::{self, TrainMessage},
     PaneType, ViewerTree,
@@ -88,7 +88,7 @@ pub struct Viewer {
 pub(crate) struct ViewerContext {
     pub dataset: Dataset,
     pub camera: Camera,
-    pub controls: OrbitControls,
+    pub controls: CameraController,
 
     pub open_panels: BTreeSet<String>,
     pub filename: Option<String>,
@@ -219,10 +219,10 @@ impl ViewerContext {
             camera: Camera::new(
                 -Vec3::Z * 5.0,
                 Quat::IDENTITY,
-                glam::vec2(0.5, 0.5),
+                glam::vec2(0.866, 0.5),
                 glam::vec2(0.5, 0.5),
             ),
-            controls: OrbitControls::new(),
+            controls: CameraController::new(),
             open_panels: BTreeSet::from([
                 panel_title(&PanelTypes::ViewOptions).to_owned(),
                 panel_title(&PanelTypes::Stats).to_owned(),
@@ -394,6 +394,7 @@ impl Viewer {
             state.device.clone(),
             state.renderer.clone(),
         );
+        println!("Scene pane created");
 
         #[allow(unused_mut)]
         let dummy = tiles.insert_pane(build_panel(&PanelTypes::Dummy, device.clone()));

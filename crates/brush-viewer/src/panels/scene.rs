@@ -7,7 +7,7 @@ use brush_render::gaussian_splats::Splats;
 use eframe::egui_wgpu::Renderer;
 use egui::{Color32, Rect};
 
-use glam::Vec2;
+use glam::{Vec2, Vec3};
 use tracing::trace_span;
 use web_time::Instant;
 use wgpu::CommandEncoderDescriptor;
@@ -68,7 +68,7 @@ impl ScenePanel {
         // If this viewport is re-rendering.
         if ui.ctx().has_requested_repaint() && self.dirty {
             let _span = trace_span!("Render splats").entered();
-            let splat_render_size = glam::uvec2(1024,1024);
+            let splat_render_size = glam::uvec2(1024, 1024);
             let (img, _) = splats.render(&context.camera, splat_render_size, background, true);
 
             let mut encoder = self
@@ -125,15 +125,17 @@ impl ScenePanel {
 
         if let Some(last_draw) = self.last_draw {
             let delta_time = cur_time - last_draw;
-
-            context.controls.pan_orbit_camera(
+            let pan = Vec3::new(pan.x, pan.y, 0.0);
+            context.controls.rotate_dolly_and_zoom(
                 &mut context.camera,
-                pan * 5.0,
-                rotate * 5.0,
-                scrolled * 0.01,
-                glam::vec2(rect.size().x, rect.size().y),
+                pan,
+                rotate,
+                scrolled,
                 delta_time.as_secs_f32(),
             );
+
+            check_for_dolly(ui, context, delta_time);
+            check_for_pan_tilt(ui, context, delta_time);
         }
         self.last_draw = Some(cur_time);
         rect
@@ -211,6 +213,67 @@ impl ScenePanel {
             }
         })
     }
+}
+fn check_for_dolly(
+    ui: &mut egui::Ui,
+    context: &mut ViewerContext,
+    delta_time: std::time::Duration,
+) {
+    let mut dolly_x = 0.0;
+    let mut dolly_y = 0.0;
+    let mut dolly_z = 0.0;
+
+    if ui.input(|r| r.key_down(egui::Key::Q)) {
+        dolly_y += 1.0;
+    }
+    if ui.input(|r| r.key_down(egui::Key::Z)) {
+        dolly_y -= 1.0;
+    }
+    if ui.input(|r| r.key_down(egui::Key::A)) {
+        dolly_x += 1.0;
+    }
+    if ui.input(|r| r.key_down(egui::Key::D)) {
+        dolly_x -= 1.0;
+    }
+    if ui.input(|r| r.key_down(egui::Key::W)) {
+        dolly_z -= 1.0;
+    }
+    if ui.input(|r| r.key_down(egui::Key::S)) {
+        dolly_z += 1.0;
+    }
+
+    context.controls.dolly(
+        &mut context.camera,
+        Vec3::new(dolly_x, dolly_y, dolly_z),
+        delta_time.as_secs_f32(),
+    );
+}
+
+fn check_for_pan_tilt(
+    ui: &mut egui::Ui,
+    context: &mut ViewerContext,
+    delta_time: std::time::Duration,
+) {
+    let mut rotate_x = 0.0;
+    let mut rotate_y = 0.0;
+    if ui.input(|r| r.key_down(egui::Key::ArrowRight)) {
+        rotate_x += 1.0;
+    }
+    if ui.input(|r| r.key_down(egui::Key::ArrowLeft)) {
+        rotate_x -= 1.0;
+    }
+    if ui.input(|r| r.key_down(egui::Key::ArrowUp)) {
+        rotate_y += 1.0;
+    }
+    if ui.input(|r| r.key_down(egui::Key::ArrowDown)) {
+        rotate_y -= 1.0;
+    }
+
+    context.controls.handle_rotate(
+        &mut context.camera,
+        Vec2::new(rotate_x, rotate_y) * 20.0,
+        delta_time.as_secs_f32(),
+    );
 }
 
 impl ViewerPanel for ScenePanel {

@@ -3,7 +3,7 @@ use egui::Margin;
 use glam::{Quat, Vec3};
 
 use super::{panel_title, PanelTypes};
-use crate::{viewer::ViewerContext, ViewerPanel};
+use crate::{camera_controller::CameraRotateMode, viewer::ViewerContext, ViewerPanel};
 
 use std::format;
 
@@ -72,9 +72,22 @@ impl ViewerPanel for ViewerOptionsPanel {
             .show(ui, |ui| {
                 ui.label("Camera");
                 ui.separator();
+                ui.label("Rotate Mode:");
+                ui.horizontal(|ui| {
+                    ui.radio_value(
+                        &mut context.controls.rotate_mode,
+                        CameraRotateMode::Orbit,
+                        "Orbit",
+                    );
+                    ui.radio_value(
+                        &mut context.controls.rotate_mode,
+                        CameraRotateMode::PanTilt,
+                        "Pan/Tilt",
+                    );
+                });
+                ui.label(format!("Focus: {}", context.controls.focus));
                 ui.label(format!("Position: {}", context.camera.position));
                 ui.label(format!("Rotation: {}", context.camera.rotation));
-                ui.label(format!("Rotation: {}", context.controls.focus));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| {
                     if ui.button("Reset").clicked() {
                         context.controls.focus = Vec3::ZERO;
