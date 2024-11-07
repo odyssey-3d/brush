@@ -245,7 +245,7 @@ pub fn load_splat_from_ply<B: Backend>(
                         interleave_coeffs(splat.sh_dc, &splat.sh_coeffs_rest);
 
                     // Limit the number of imported SH channels for now.
-                    let max_sh_len = sh_coeffs_for_degree(3) as usize * 3;
+                    let max_sh_len = sh_coeffs_for_degree(4) as usize * 3;
 
                     if sh_coeffs_interleaved.len() > max_sh_len {
                         sh_coeffs_interleaved.truncate(max_sh_len);

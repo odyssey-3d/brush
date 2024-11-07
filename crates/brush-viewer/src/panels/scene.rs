@@ -7,7 +7,6 @@ use brush_render::gaussian_splats::Splats;
 use eframe::egui_wgpu::Renderer;
 use egui::{Color32, Rect};
 
-use glam::{Vec2, Vec3};
 use tracing::trace_span;
 use web_time::Instant;
 use wgpu::CommandEncoderDescriptor;
@@ -97,50 +96,6 @@ impl ScenePanel {
         }
     }
 
-    fn update_camera_controls(
-        &mut self,
-        ui: &mut egui::Ui,
-        size: glam::UVec2,
-        context: &mut ViewerContext,
-    ) -> Rect {
-        let (rect, response) = ui.allocate_exact_size(
-            egui::Vec2::new(size.x as f32, size.y as f32),
-            egui::Sense::drag(),
-        );
-
-        let mouse_delta = glam::vec2(response.drag_delta().x, response.drag_delta().y);
-
-        let (pan, rotate) = if response.dragged_by(egui::PointerButton::Primary) {
-            (Vec2::ZERO, mouse_delta)
-        } else if response.dragged_by(egui::PointerButton::Secondary)
-            || response.dragged_by(egui::PointerButton::Middle)
-        {
-            (mouse_delta, Vec2::ZERO)
-        } else {
-            (Vec2::ZERO, Vec2::ZERO)
-        };
-
-        let scrolled = ui.input(|r| r.smooth_scroll_delta).y;
-        let cur_time = Instant::now();
-
-        if let Some(last_draw) = self.last_draw {
-            let delta_time = cur_time - last_draw;
-            let pan = Vec3::new(pan.x, pan.y, 0.0);
-            context.controls.rotate_dolly_and_zoom(
-                &mut context.camera,
-                pan,
-                rotate,
-                scrolled,
-                delta_time.as_secs_f32(),
-            );
-
-            check_for_dolly(ui, context, delta_time);
-            check_for_pan_tilt(ui, context, delta_time);
-        }
-        self.last_draw = Some(cur_time);
-        rect
-    }
-
     fn show_splat_options(
         &mut self,
         ui: &mut egui::Ui,
@@ -213,67 +168,6 @@ impl ScenePanel {
             }
         })
     }
-}
-fn check_for_dolly(
-    ui: &mut egui::Ui,
-    context: &mut ViewerContext,
-    delta_time: std::time::Duration,
-) {
-    let mut dolly_x = 0.0;
-    let mut dolly_y = 0.0;
-    let mut dolly_z = 0.0;
-
-    if ui.input(|r| r.key_down(egui::Key::Q)) {
-        dolly_y += 1.0;
-    }
-    if ui.input(|r| r.key_down(egui::Key::Z)) {
-        dolly_y -= 1.0;
-    }
-    if ui.input(|r| r.key_down(egui::Key::A)) {
-        dolly_x += 1.0;
-    }
-    if ui.input(|r| r.key_down(egui::Key::D)) {
-        dolly_x -= 1.0;
-    }
-    if ui.input(|r| r.key_down(egui::Key::W)) {
-        dolly_z -= 1.0;
-    }
-    if ui.input(|r| r.key_down(egui::Key::S)) {
-        dolly_z += 1.0;
-    }
-
-    context.controls.dolly(
-        &mut context.camera,
-        Vec3::new(dolly_x, dolly_y, dolly_z),
-        delta_time.as_secs_f32(),
-    );
-}
-
-fn check_for_pan_tilt(
-    ui: &mut egui::Ui,
-    context: &mut ViewerContext,
-    delta_time: std::time::Duration,
-) {
-    let mut rotate_x = 0.0;
-    let mut rotate_y = 0.0;
-    if ui.input(|r| r.key_down(egui::Key::ArrowRight)) {
-        rotate_x += 1.0;
-    }
-    if ui.input(|r| r.key_down(egui::Key::ArrowLeft)) {
-        rotate_x -= 1.0;
-    }
-    if ui.input(|r| r.key_down(egui::Key::ArrowUp)) {
-        rotate_y += 1.0;
-    }
-    if ui.input(|r| r.key_down(egui::Key::ArrowDown)) {
-        rotate_y -= 1.0;
-    }
-
-    context.controls.handle_rotate(
-        &mut context.camera,
-        Vec2::new(rotate_x, rotate_y) * 20.0,
-        delta_time.as_secs_f32(),
-    );
 }
 
 impl ViewerPanel for ScenePanel {
@@ -359,12 +253,29 @@ runs consider using the native app."#,
                     } else {
                         size.y = size.x / aspect_ratio;
                     }
-                    // Round to 64 pixels. Necesarry for buffer sizes to align.
-                    let size = glam::uvec2(size.x.round() as u32, size.y.round() as u32);
-                    let rect = self.update_camera_controls(ui, size, context);
-                    self.draw_splats(ui, context, rect, &splats, context.dataset.train.background);
 
-                    self.show_splat_options(ui, context, &splats);
+                    let cur_time = Instant::now();
+
+                    if let Some(last_draw) = self.last_draw {
+                        let delta_time = cur_time - last_draw;
+                        let size = glam::uvec2(size.x.round() as u32, size.y.round() as u32);
+                        let rect = context.controls.handle_user_input(
+                            ui,
+                            size,
+                            &mut context.camera,
+                            delta_time,
+                        );
+                        self.draw_splats(
+                            ui,
+                            context,
+                            rect,
+                            &splats,
+                            context.dataset.train.background,
+                        );
+
+                        self.show_splat_options(ui, context, &splats);
+                    }
+                    self.last_draw = Some(cur_time);
                 }
                 _ => {}
             }

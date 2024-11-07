@@ -1,9 +1,5 @@
-use brush_render::camera::Camera;
-use egui::Margin;
-use glam::{Quat, Vec3};
-
 use super::{panel_title, PanelTypes};
-use crate::{camera_controller::CameraRotateMode, viewer::ViewerContext, ViewerPanel};
+use crate::{ viewer::ViewerContext, ViewerPanel};
 
 use std::format;
 
@@ -37,6 +33,7 @@ fn show_open_panel_options(
     }
 }
 
+
 impl ViewerPanel for ViewerOptionsPanel {
     fn title(&self) -> String {
         panel_title(&PanelTypes::ViewOptions).to_owned()
@@ -65,40 +62,6 @@ impl ViewerPanel for ViewerOptionsPanel {
             });
         });
 
-        egui::Frame::default()
-            .stroke(ui.visuals().widgets.noninteractive.bg_stroke)
-            .outer_margin(Margin::same(5.0))
-            .inner_margin(Margin::same(5.0))
-            .show(ui, |ui| {
-                ui.label("Camera");
-                ui.separator();
-                ui.label("Rotate Mode:");
-                ui.horizontal(|ui| {
-                    ui.radio_value(
-                        &mut context.controls.rotate_mode,
-                        CameraRotateMode::Orbit,
-                        "Orbit",
-                    );
-                    ui.radio_value(
-                        &mut context.controls.rotate_mode,
-                        CameraRotateMode::PanTilt,
-                        "Pan/Tilt",
-                    );
-                });
-                ui.label(format!("Focus: {}", context.controls.focus));
-                ui.label(format!("Position: {}", context.camera.position));
-                ui.label(format!("Rotation: {}", context.camera.rotation));
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| {
-                    if ui.button("Reset").clicked() {
-                        context.controls.focus = Vec3::ZERO;
-                        context.camera = Camera::new(
-                            -Vec3::Z * 5.0,
-                            Quat::IDENTITY,
-                            glam::vec2(0.5, 0.5),
-                            glam::vec2(0.5, 0.5),
-                        );
-                    }
-                });
-            });
+        context.controls.show_ui_controls(ui, &mut context.camera);
     }
 }

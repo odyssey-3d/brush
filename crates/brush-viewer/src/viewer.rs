@@ -394,12 +394,12 @@ impl Viewer {
             state.device.clone(),
             state.renderer.clone(),
         );
-        println!("Scene pane created");
 
         #[allow(unused_mut)]
         let dummy = tiles.insert_pane(build_panel(&PanelTypes::Dummy, device.clone()));
+        let view = tiles.insert_pane(build_panel(&PanelTypes::ViewOptions, device.clone()));
         let sides = vec![
-            tiles.insert_pane(build_panel(&PanelTypes::ViewOptions, device.clone())),
+            view,
             tiles.insert_pane(Box::new(StatsPanel::new(device, state.adapter.clone()))),
             dummy,
         ];
@@ -412,13 +412,14 @@ impl Viewer {
             egui_tiles::LinearDir::Horizontal,
             vec![side_panel, scene_pane_id],
         );
-        lin.shares.set_share(side_panel, 0.4);
+        lin.shares.set_share(side_panel, 0.2);
 
         let root_container = tiles.insert_container(lin);
         let mut tree = egui_tiles::Tree::new("viewer_tree", root_container, tiles);
         tree.set_visible(dummy, false);
 
         let tree_ctx = ViewerTree { context };
+
         Viewer {
             tree,
             tree_ctx,
@@ -522,27 +523,27 @@ impl eframe::App for Viewer {
             .frame(egui::Frame::none().inner_margin(4.0))
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
-                    let style = ui.style().clone();
-                    ui.style_mut().text_styles.insert(
-                        egui::TextStyle::Button,
-                        egui::FontId::new(24.0, eframe::epaint::FontFamily::Proportional),
-                    );
-                    ui.style_mut().text_styles.insert(
-                        egui::TextStyle::Heading,
-                        egui::FontId::new(24.0, eframe::epaint::FontFamily::Proportional),
-                    );
-                    if self.tree_ctx.context.filename.is_none() {
-                        ui.heading("<No Scene loaded>");
-                        if ui.button("...").clicked() {
-                            self.tree_ctx.context.start_ply_load();
+                    ui.scope(|ui| {
+                        ui.style_mut().text_styles.insert(
+                            egui::TextStyle::Button,
+                            egui::FontId::new(24.0, eframe::epaint::FontFamily::Proportional),
+                        );
+                        ui.style_mut().text_styles.insert(
+                            egui::TextStyle::Heading,
+                            egui::FontId::new(24.0, eframe::epaint::FontFamily::Proportional),
+                        );
+                        if self.tree_ctx.context.filename.is_none() {
+                            ui.heading("<No Scene loaded>");
+                            if ui.button("...").clicked() {
+                                self.tree_ctx.context.start_ply_load();
+                            }
+                        } else {
+                            ui.heading(self.tree_ctx.context.filename.as_ref().unwrap());
+                            if ui.button("...").clicked() {
+                                self.tree_ctx.context.start_ply_load();
+                            }
                         }
-                    } else {
-                        ui.heading(self.tree_ctx.context.filename.as_ref().unwrap());
-                        if ui.button("...").clicked() {
-                            self.tree_ctx.context.start_ply_load();
-                        }
-                    }
-                    ui.set_style(style);
+                    });
                 });
             });
 
