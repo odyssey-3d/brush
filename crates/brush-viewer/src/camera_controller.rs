@@ -143,6 +143,7 @@ impl CameraController {
                 self.orbit(camera, rotate, delta_time);
             }
             CameraRotateMode::PanTilt => {
+                let rotate = Vec2::new(rotate.x, -rotate.y);
                 self.pan_and_tilt(camera, rotate, delta_time);
             }
         }
@@ -240,6 +241,7 @@ impl CameraController {
         );
 
         let mouse_delta = glam::vec2(response.drag_delta().x, response.drag_delta().y);
+        let scrolled = ui.input(|r| r.smooth_scroll_delta).y;
 
         let (movement, rotate) = if response.dragged_by(egui::PointerButton::Primary) {
             (Vec2::ZERO, mouse_delta)
@@ -251,11 +253,9 @@ impl CameraController {
             (Vec2::ZERO, Vec2::ZERO)
         };
 
-        let scrolled = ui.input(|r| r.smooth_scroll_delta).y;
-
         let movement = Vec3::new(movement.x, movement.y, 0.0);
-        self.rotate_dolly_and_zoom(camera, movement, rotate, scrolled, delta_time.as_secs_f32());
 
+        self.rotate_dolly_and_zoom(camera, movement, rotate, scrolled, delta_time.as_secs_f32());
         self.check_for_dolly(ui, camera, delta_time);
         self.check_for_pan_tilt(ui, camera, delta_time);
 
@@ -371,18 +371,18 @@ impl CameraController {
                         .show(ui, |ui| {
                             self.draw_empty_cell(ui);
                             self.draw_button(ui, camera, "⤴", "⬆", &|controller, camera| {
-                                controller.handle_rotate(camera, glam::vec2(0.0, 1.0), 0.5);
+                                controller.handle_rotate(camera, glam::vec2(0.0, 100.0), 0.5);
                             });
                             self.draw_empty_cell(ui);
                             ui.end_row();
                             self.draw_button(ui, camera, "⮪", "⬅", &|controller, camera| {
-                                controller.handle_rotate(camera, glam::vec2(-1.0, 0.0), 0.5);
+                                controller.handle_rotate(camera, glam::vec2(-100.0, 0.0), 0.5);
                             });
                             self.draw_button(ui, camera, "⤵", "⬇", &|controller, camera| {
-                                controller.handle_rotate(camera, glam::vec2(0.0, -1.0), 0.5);
+                                controller.handle_rotate(camera, glam::vec2(0.0, -100.0), 0.5);
                             });
                             self.draw_button(ui, camera, "⮫", "➡", &|controller, camera| {
-                                controller.handle_rotate(camera, glam::vec2(1.0, 0.0), 0.5);
+                                controller.handle_rotate(camera, glam::vec2(100.0, 0.0), 0.5);
                             });
                         });
                     ui.add_sized(
