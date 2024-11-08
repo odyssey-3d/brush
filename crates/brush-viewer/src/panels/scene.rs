@@ -3,7 +3,7 @@ use brush_dataset::splat_export;
 use std::ops::Range;
 use std::sync::Arc;
 
-use burn::tensor::{Distribution, Tensor};
+use burn::tensor::Tensor;
 
 use brush_render::gaussian_splats::Splats;
 use brush_ui::burn_texture::BurnTexture;
