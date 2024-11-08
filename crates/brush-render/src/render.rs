@@ -60,6 +60,7 @@ fn render_forward(
     quats: JitTensor<WgpuRuntime, f32>,
     sh_coeffs: JitTensor<WgpuRuntime, f32>,
     raw_opacities: JitTensor<WgpuRuntime, f32>,
+    selected: JitTensor<WgpuRuntime, f32>,
     background: glam::Vec3,
     raster_u32: bool,
 ) -> (JitTensor<WgpuRuntime, f32>, RenderAux<PrimaryBackend>) {
@@ -77,7 +78,8 @@ fn render_forward(
         .check_dims(&log_scales, &["D".into(), 3.into()])
         .check_dims(&quats, &["D".into(), 4.into()])
         .check_dims(&sh_coeffs, &["D".into(), "C".into(), 3.into()])
-        .check_dims(&raw_opacities, &["D".into()]);
+        .check_dims(&raw_opacities, &["D".into()])
+        .check_dims(&selected, &["D".into()]);
 
     // Divide screen into tiles.
     let tile_bounds = uvec2(
@@ -178,6 +180,7 @@ fn render_forward(
                 quats.handle.binding(),
                 sh_coeffs.handle.binding(),
                 raw_opacities.handle.binding(),
+                selected.handle.binding(),
                 global_from_compact_gid.handle.clone().binding(),
                 projected_splats.handle.clone().binding(),
                 num_tiles_hit.handle.clone().binding(),
@@ -334,6 +337,7 @@ impl Backend for PrimaryBackend {
         quats: Tensor<Self, 2>,
         sh_coeffs: Tensor<Self, 3>,
         raw_opacity: Tensor<Self, 1>,
+        selected: Tensor<Self, 1>,
         background: glam::Vec3,
         render_u32_buffer: bool,
     ) -> (Tensor<Self, 3>, RenderAux<Self>) {
@@ -345,6 +349,7 @@ impl Backend for PrimaryBackend {
             quats.into_primitive().tensor(),
             sh_coeffs.into_primitive().tensor(),
             raw_opacity.into_primitive().tensor(),
+            selected.into_primitive().tensor(),
             background,
             render_u32_buffer,
         );
@@ -377,6 +382,7 @@ impl<C: CheckpointStrategy> Backend for Autodiff<PrimaryBackend, C> {
         quats: Tensor<Self, 2>,
         sh_coeffs: Tensor<Self, 3>,
         raw_opacity: Tensor<Self, 1>,
+        selected: Tensor<Self, 1>,
         background: glam::Vec3,
         render_u32_buffer: bool,
     ) -> (Tensor<Self, 3>, RenderAux<Self>) {
@@ -388,6 +394,7 @@ impl<C: CheckpointStrategy> Backend for Autodiff<PrimaryBackend, C> {
         let quats = quats.into_primitive().tensor();
         let sh_coeffs = sh_coeffs.into_primitive().tensor();
         let raw_opacity = raw_opacity.into_primitive().tensor();
+        let selected = selected.into_primitive().tensor();
 
         // Render complete forward pass.
         let (out_img, aux) = render_forward(
@@ -398,6 +405,7 @@ impl<C: CheckpointStrategy> Backend for Autodiff<PrimaryBackend, C> {
             quats.clone().into_primitive(),
             sh_coeffs.clone().into_primitive(),
             raw_opacity.clone().into_primitive(),
+            selected.clone().into_primitive(),
             background,
             render_u32_buffer,
         );
@@ -678,6 +686,7 @@ mod tests {
             .repeat_dim(0, num_points);
         let sh_coeffs = Tensor::ones([num_points, 1, 3], &device);
         let raw_opacity = Tensor::zeros([num_points], &device);
+        let selected = Tensor::zeros([num_points], &device);
         let (output, _) = DiffBack::render_splats(
             &cam,
             img_size,
@@ -687,6 +696,7 @@ mod tests {
             quats,
             sh_coeffs,
             raw_opacity,
+            selected,
             glam::vec3(0.123, 0.123, 0.123),
             false,
         );

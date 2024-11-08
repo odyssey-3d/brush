@@ -137,6 +137,8 @@ fn update_splats<B: Backend>(
         Splats::map_param(&mut splats.log_scales, |x| {
             Tensor::cat(vec![x, log_scales.clone()], 0)
         });
+        let num_points = splats.means.shape().dims[0];
+        splats.selected = Tensor::zeros([num_points], device);
         splats.norm_rotations();
     } else {
         let mut init = Splats {
@@ -146,6 +148,7 @@ fn update_splats<B: Backend>(
             raw_opacity: Param::initialized(ParamId::new(), raw_opacities),
             log_scales: Param::initialized(ParamId::new(), log_scales),
             xys_dummy: Tensor::zeros([n_splats, 2], device).require_grad(),
+            selected: Tensor::zeros([n_splats], device),
         };
         init.norm_rotations();
         // Create a new splat instance if it hasn't been initialzized yet.

@@ -1,11 +1,15 @@
 use brush_dataset::splat_export;
-use brush_ui::burn_texture::BurnTexture;
-use egui::epaint::mutex::RwLock as EguiRwLock;
 
+use std::ops::Range;
 use std::sync::Arc;
 
+use burn::tensor::{Distribution, Tensor};
+
 use brush_render::gaussian_splats::Splats;
+use brush_ui::burn_texture::BurnTexture;
+
 use eframe::egui_wgpu::Renderer;
+use egui::epaint::mutex::RwLock as EguiRwLock;
 use egui::{Color32, Rect};
 use glam::Affine3A;
 use tracing::trace_span;
@@ -33,6 +37,8 @@ pub(crate) struct ScenePanel {
     queue: Arc<wgpu::Queue>,
     device: Arc<wgpu::Device>,
     renderer: Arc<EguiRwLock<Renderer>>,
+
+    splats: Option<Splats<brush_render::PrimaryBackend>>,
 }
 
 impl ScenePanel {
@@ -54,6 +60,7 @@ impl ScenePanel {
             queue,
             device,
             renderer,
+            splats: None,
         }
     }
 
@@ -62,9 +69,9 @@ impl ScenePanel {
         ui: &mut egui::Ui,
         context: &mut ViewerContext,
         rect: Rect,
-        splats: &Splats<brush_render::PrimaryBackend>,
         background: glam::Vec3,
     ) {
+        let splats = self.splats.as_ref().unwrap();
         // If this viewport is re-rendering.
         if ui.ctx().has_requested_repaint() && self.dirty {
             let _span = trace_span!("Render splats").entered();
@@ -94,9 +101,50 @@ impl ScenePanel {
         &mut self,
         ui: &mut egui::Ui,
         context: &mut ViewerContext,
-        splats: &Splats<brush_render::PrimaryBackend>,
     ) -> egui::InnerResponse<()> {
+        let splats = self.splats.as_mut().unwrap();
         ui.horizontal(|ui| {
+            ui.add_space(10.0);
+            if ui.button("Select All").clicked() {
+                let s = Tensor::ones_like(&splats.selected);
+                splats.set_selected(s);
+            }
+            if ui.button("Select None").clicked() {
+                let s = Tensor::zeros_like(&splats.selected);
+                splats.set_selected(s);
+            }
+            if ui.button("Select Multi").clicked() {
+                let s = Tensor::zeros_like(&splats.selected);
+                let num_splats = splats.num_splats() / 1000;
+                let s = s.slice_assign(
+                    [
+                        Range {
+                            start: 0,
+                            end: num_splats,
+                        },
+                    ],
+                    Tensor::ones([num_splats], &context.device) * 2.0,
+                );
+                let s = s.slice_assign(
+                    [
+                        Range {
+                            start: num_splats,
+                            end: 2*num_splats,
+                        },
+                    ],
+                    Tensor::ones([num_splats], &context.device),
+                );
+                let s = s.slice_assign(
+                    [
+                        Range {
+                            start: 2*num_splats,
+                            end: 3*num_splats,
+                        },
+                    ],
+                    Tensor::ones([num_splats], &context.device) * 3.0,
+                );
+                splats.set_selected(s);
+            }
             if self.is_training {
                 ui.add_space(15.0);
 
@@ -173,6 +221,7 @@ impl ViewerPanel for ScenePanel {
         match message.clone() {
             ViewerMessage::PickFile => {
                 self.last_message = None;
+                self.splats = None;
                 self.paused = false;
                 self.is_loading = false;
                 self.is_training = false;
@@ -187,11 +236,15 @@ impl ViewerPanel for ScenePanel {
                 self.is_training = training;
                 self.last_message = None;
                 self.is_loading = true;
+                if !training {
+                    self.live_update = true;
+                }
             }
-            ViewerMessage::Splats { iter: _, splats: _ } => {
+            ViewerMessage::Splats { iter: _, splats } => {
                 if self.live_update {
                     self.dirty = true;
                     self.last_message = Some(message);
+                    self.splats = Some(*splats);
                 }
             }
             ViewerMessage::Error(_) => {
@@ -247,7 +300,8 @@ runs consider using the native app."#,
                 ViewerMessage::Error(e) => {
                     ui.label("Error: ".to_owned() + &e.to_string());
                 }
-                ViewerMessage::Splats { iter: _, splats } => {
+                ViewerMessage::Splats { iter: _, splats: _ } => {
+                    // let splats = self.splats.as_mut().unwrap();
                     let mut size = ui.available_size();
                     let focal = context.camera.focal(glam::uvec2(1, 1));
                     let aspect_ratio = focal.y / focal.x;
@@ -268,15 +322,9 @@ runs consider using the native app."#,
                             &mut context.camera,
                             delta_time,
                         );
-                        self.draw_splats(
-                            ui,
-                            context,
-                            rect,
-                            &splats,
-                            context.dataset.train.background,
-                        );
+                        self.draw_splats(ui, context, rect, context.dataset.train.background);
 
-                        self.show_splat_options(ui, context, &splats);
+                        self.show_splat_options(ui, context);
                     }
                     self.last_draw = Some(cur_time);
                 }

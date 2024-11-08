@@ -31,6 +31,7 @@ pub struct Splats<B: Backend> {
 
     // Dummy input to track screenspace gradient.
     pub xys_dummy: Tensor<B, 2>,
+    pub selected: Tensor<B, 1>,
 }
 
 pub fn inverse_sigmoid(x: f32) -> f32 {
@@ -154,6 +155,7 @@ impl<B: Backend> Splats<B> {
             raw_opacity: Param::initialized(ParamId::new(), raw_opacity.detach().require_grad()),
             log_scales: Param::initialized(ParamId::new(), log_scales.detach().require_grad()),
             xys_dummy: Tensor::zeros([num_points, 2], device).require_grad(),
+            selected: Tensor::zeros([num_points], device),
         }
     }
 
@@ -162,6 +164,10 @@ impl<B: Backend> Splats<B> {
         f: impl Fn(Tensor<B, D>) -> Tensor<B, D>,
     ) {
         *tensor = tensor.clone().map(|x| f(x).detach().require_grad());
+    }
+
+    pub fn set_selected(&mut self, selected: Tensor<B, 1>) {
+        self.selected = selected;
     }
 
     pub fn render(
@@ -180,6 +186,7 @@ impl<B: Backend> Splats<B> {
             self.rotation.val(),
             self.sh_coeffs.val(),
             self.raw_opacity.val(),
+            self.selected.clone(),
             bg_color,
             render_u32_buffer,
         )

@@ -7,11 +7,12 @@
 @group(0) @binding(3) var<storage, read> quats: array<vec4f>;
 @group(0) @binding(4) var<storage, read> coeffs: array<helpers::PackedVec3>;
 @group(0) @binding(5) var<storage, read> raw_opacities: array<f32>;
+@group(0) @binding(6) var<storage, read> selection_id: array<f32>;
 
-@group(0) @binding(6) var<storage, read_write> global_from_compact_gid: array<u32>;
+@group(0) @binding(7) var<storage, read_write> global_from_compact_gid: array<u32>;
 
-@group(0) @binding(7) var<storage, read_write> projected: array<helpers::ProjectedSplat>;
-@group(0) @binding(8) var<storage, read_write> num_tiles_hit: array<u32>;
+@group(0) @binding(8) var<storage, read_write> projected: array<helpers::ProjectedSplat>;
+@group(0) @binding(9) var<storage, read_write> num_tiles_hit: array<u32>;
 
 struct ShCoeffs {
     b0_c0: vec3f,
@@ -183,6 +184,8 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     let cov2d = helpers::calc_cov2d(uniforms.focal, uniforms.img_size, uniforms.pixel_center, viewmat, p_view, scale, quat);
     let conic = helpers::cov_to_conic(cov2d);
 
+    let sel_id = selection_id[global_gid];
+
     // compute the projected mean
     let xy = helpers::project_pix(uniforms.focal, p_view, uniforms.pixel_center);
 
@@ -252,7 +255,8 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     projected[compact_gid] = helpers::create_projected_splat(
         xy,
         conic,
-        vec4f(color, opac)
+        vec4f(color, opac),
+        sel_id,
     );
     num_tiles_hit[compact_gid] = u32(tile_area);
 }

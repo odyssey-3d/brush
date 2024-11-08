@@ -93,7 +93,7 @@ pub(crate) struct ViewerContext {
     pub open_panels: BTreeSet<String>,
     pub filename: Option<String>,
 
-    device: WgpuDevice,
+    pub device: WgpuDevice,
     ctx: egui::Context,
 
     sender: Option<Sender<TrainMessage>>,

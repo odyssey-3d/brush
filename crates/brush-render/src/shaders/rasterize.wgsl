@@ -66,13 +66,15 @@ fn main(
 
         if local_idx < remaining {
             let load_isect_id = batch_start + local_idx;
-            local_batch[local_idx] = projected_splats[compact_gid_from_isect[load_isect_id]];
+            let gid = compact_gid_from_isect[load_isect_id];
+            local_batch[local_idx] = projected_splats[gid];
         }
         // Wait for all writes to complete.
         workgroupBarrier();
 
         for (var t = 0u; t < remaining && !done; t++) {
             let projected = local_batch[t];
+            let selection_id = projected.selection_id;
 
             let xy = vec2f(projected.xy_x, projected.xy_y);
             let conic = vec3f(projected.conic_x, projected.conic_y, projected.conic_z);
@@ -92,7 +94,26 @@ fn main(
                 }
 
                 let fac = alpha * T;
-                pix_out += vec3f(color.r, color.g, color.b) * fac;
+                let selection_id = u32(selection_id);
+                if selection_id > 0 {
+                    switch selection_id {
+                        case 1u: {
+                            pix_out = vec3f(0.5, 1.0, 1.0);
+                        }
+                        case 2u:{
+                            pix_out = vec3f(1.0, 1.0, 0.5);
+                        }
+                        default:{
+                            pix_out = vec3f(1.0, 0.5, 1.0);
+                        }
+                    }
+                    T = 0.5;
+                    done = true; 
+                    break;
+                }
+                else{
+                    pix_out += vec3f(color.r, color.g, color.b) * fac;
+                }
                 T = next_T;
 
                 let isect_id = batch_start + t;

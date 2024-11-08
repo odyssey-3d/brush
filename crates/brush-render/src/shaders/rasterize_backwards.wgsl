@@ -288,7 +288,8 @@ fn main(
                         gather_grads[grad_idx] = helpers::create_projected_splat(
                             v_xy_sum,
                             v_conic_sum,
-                            v_colors_sum
+                            v_colors_sum,
+                            0.0
                         );
                         gather_grad_id[grad_idx] = local_id[t];
                     }
