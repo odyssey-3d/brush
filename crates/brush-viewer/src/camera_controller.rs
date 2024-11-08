@@ -287,7 +287,6 @@ impl CameraController {
             self.focus = Vec3::ZERO;
             camera.position = -Vec3::Z * 5.0;
             camera.rotation = Quat::IDENTITY;
-            camera.fov = glam::vec2(0.5, 0.5);
             camera.center_uv = glam::vec2(0.5, 0.5);
         }
         ui.horizontal(|ui| {

@@ -18,9 +18,6 @@ use crate::ssim::Ssim;
 
 #[derive(Config)]
 pub struct TrainConfig {
-    #[config(default = 30000)]
-    total_steps: usize,
-
     // period of steps where refinement is turned off
     #[config(default = 500)]
     warmup_steps: u32,
@@ -29,8 +26,8 @@ pub struct TrainConfig {
     #[config(default = 100)]
     refine_every: u32,
 
-    #[config(default = 0.5)]
-    stop_refine_percent: f32,
+    #[config(default = 15000)]
+    max_refine_step: u32,
 
     #[config(default = 0.004)]
     reset_alpha_value: f32,
@@ -183,11 +180,9 @@ impl<B: AutodiffBackend> SplatTrainer<B>
 where
     B::InnerBackend: Backend,
 {
-    pub fn new(num_points: usize, config: &TrainConfig, splats: &Splats<B>) -> Self {
+    pub fn new(num_points: usize, config: &TrainConfig, device: &B::Device) -> Self {
         let opt_config = AdamConfig::new().with_epsilon(1e-15);
         let optim = opt_config.init::<B, Splats<B>>();
-
-        let device = &splats.means.device();
 
         let ssim = Ssim::new(config.ssim_window_size, 3, device);
         Self {
@@ -269,9 +264,6 @@ where
             (pred_images, auxes, loss)
         };
 
-        let max_refine_step =
-            (self.config.stop_refine_percent * self.config.total_steps as f32) as u32;
-
         let mut grads = trace_span!("Backward pass", sync_burn = true).in_scope(|| loss.backward());
 
         // TODO: Should scale lr be scales by scene scale as well?
@@ -284,37 +276,33 @@ where
         );
 
         trace_span!("Housekeeping", sync_burn = true).in_scope(|| {
-            // Get the xy gradient norm from the dummy tensor.
-            let xys_grad = Tensor::from_inner(
-                splats
-                    .xys_dummy
-                    .grad_remove(&mut grads)
-                    .expect("XY gradients need to be calculated."),
-            );
-
-            let gs_ids = Tensor::from_primitive(auxes[0].global_from_compact_gid.clone());
-
-            let [_, h, w, _] = pred_images.dims();
-            let device = batch.gt_images.device();
-            let xys_grad = xys_grad
-                * Tensor::<_, 1>::from_floats([w as f32 / 2.0, h as f32 / 2.0], &device)
-                    .reshape([1, 2]);
-
-            let xys_grad_norm = (xys_grad.clone() * xys_grad).sum_dim(1).squeeze(1).sqrt();
-
             // TODO: Burn really should implement +=
             if self.iter > self.config.warmup_steps {
+                // Get the xy gradient norm from the dummy tensor.
+                let xys_grad = Tensor::from_inner(
+                    splats
+                        .xys_dummy
+                        .grad_remove(&mut grads)
+                        .expect("XY gradients need to be calculated."),
+                );
+
+                let gs_ids = Tensor::from_primitive(auxes[0].global_from_compact_gid.clone());
+
+                let [_, h, w, _] = pred_images.dims();
+                let device = batch.gt_images.device();
+                let xys_grad = xys_grad
+                    * Tensor::<_, 1>::from_floats([w as f32 / 2.0, h as f32 / 2.0], &device)
+                        .reshape([1, 2]);
+
+                let xys_grad_norm = (xys_grad.clone() * xys_grad).sum_dim(1).squeeze(1).sqrt();
+
                 let ones = Tensor::ones(xys_grad_norm.dims(), &device);
                 self.xy_grad_counts =
                     self.xy_grad_counts
                         .clone()
                         .select_assign(0, gs_ids.clone(), ones);
 
-                self.grad_2d_accum = self.grad_2d_accum.clone().select_assign(
-                    0,
-                    gs_ids.clone(),
-                    xys_grad_norm.clone(),
-                );
+                self.grad_2d_accum = self.grad_2d_accum.clone() + xys_grad_norm;
             }
         });
 
@@ -362,7 +350,7 @@ where
 
         let mut refine_stats = None;
 
-        let do_refine = self.iter < max_refine_step
+        let do_refine = self.iter < self.config.max_refine_step
             && self.iter >= self.config.warmup_steps
             && self.iter % self.config.refine_every == 1;
 

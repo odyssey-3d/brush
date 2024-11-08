@@ -66,7 +66,6 @@ impl ViewerPanel for TrainingOptionsPanel {
             };
 
             let config = TrainConfig::new(ExponentialLrSchedulerConfig::new(lr_max, decay))
-                .with_total_steps(total_steps)
                 .with_densify_grad_thresh(grad_thresh)
                 .with_refine_every(refine_every);
 

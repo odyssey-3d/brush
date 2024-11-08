@@ -219,7 +219,8 @@ impl ViewerContext {
             camera: Camera::new(
                 -Vec3::Z * 5.0,
                 Quat::IDENTITY,
-                glam::vec2(0.866, 0.5),
+                0.866,
+                0.5,
                 glam::vec2(0.5, 0.5),
             ),
             controls: CameraController::new(),

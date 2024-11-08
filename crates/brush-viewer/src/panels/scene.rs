@@ -1,4 +1,5 @@
 use brush_dataset::splat_export;
+use brush_ui::burn_texture::BurnTexture;
 use egui::epaint::mutex::RwLock as EguiRwLock;
 
 use std::sync::Arc;
@@ -6,13 +7,11 @@ use std::sync::Arc;
 use brush_render::gaussian_splats::Splats;
 use eframe::egui_wgpu::Renderer;
 use egui::{Color32, Rect};
-
+use glam::Affine3A;
 use tracing::trace_span;
 use web_time::Instant;
-use wgpu::CommandEncoderDescriptor;
 
 use crate::{
-    burn_texture::BurnTexture,
     train_loop::TrainMessage,
     viewer::{ViewerContext, ViewerMessage},
     ViewerPanel,
@@ -28,6 +27,7 @@ pub(crate) struct ScenePanel {
     live_update: bool,
     paused: bool,
 
+    last_cam_trans: Affine3A,
     dirty: bool,
 
     queue: Arc<wgpu::Queue>,
@@ -42,12 +42,13 @@ impl ScenePanel {
         renderer: Arc<EguiRwLock<Renderer>>,
     ) -> Self {
         Self {
-            backbuffer: BurnTexture::new(),
+            backbuffer: BurnTexture::new(device.clone(), queue.clone()),
             last_draw: None,
             last_message: None,
             live_update: true,
             paused: false,
-            dirty: false,
+            dirty: true,
+            last_cam_trans: Affine3A::IDENTITY,
             is_loading: false,
             is_training: false,
             queue,
@@ -67,17 +68,10 @@ impl ScenePanel {
         // If this viewport is re-rendering.
         if ui.ctx().has_requested_repaint() && self.dirty {
             let _span = trace_span!("Render splats").entered();
-            let splat_render_size = glam::uvec2(1024, 1024);
-            let (img, _) = splats.render(&context.camera, splat_render_size, background, true);
-
-            let mut encoder = self
-                .device
-                .create_command_encoder(&CommandEncoderDescriptor {
-                    label: Some("viewer encoder"),
-                });
-            self.backbuffer
-                .update_texture(img, &self.device, self.renderer.clone(), &mut encoder);
-            self.queue.submit([encoder.finish()]);
+            let size = glam::uvec2(1024, 1024);
+            let (img, _) = splats.render(&context.camera, size, background, true);
+            self.backbuffer.update_texture(img, self.renderer.clone());
+            self.dirty = false;
         }
 
         if let Some(id) = self.backbuffer.id() {
@@ -239,6 +233,15 @@ runs consider using the native app."#,
             return;
         }
 
+        if self.last_cam_trans
+            != glam::Affine3A::from_rotation_translation(
+                context.camera.rotation,
+                context.camera.position,
+            )
+        {
+            self.dirty = true;
+        }
+
         if let Some(message) = self.last_message.clone() {
             match message {
                 ViewerMessage::Error(e) => {
@@ -279,11 +282,6 @@ runs consider using the native app."#,
                 }
                 _ => {}
             }
-        }
-
-        if context.controls.is_animating() {
-            self.dirty = true;
-            ui.ctx().request_repaint();
         }
     }
 }
