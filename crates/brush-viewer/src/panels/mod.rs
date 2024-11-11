@@ -7,6 +7,7 @@ mod stats;
 
 mod dummy;
 mod viewer_options;
+mod tracing_debug;
 
 pub(crate) use datasets::*;
 pub(crate) use dummy::*;
@@ -15,18 +16,14 @@ pub(crate) use scene::*;
 pub(crate) use stats::*;
 pub(crate) use training_options::*;
 pub(crate) use viewer_options::*;
+#[allow(unused)]
+pub(crate) use tracing_debug::*;
 
 #[cfg(not(target_family = "wasm"))]
 mod rerun;
 
 #[cfg(not(target_family = "wasm"))]
 pub(crate) use rerun::*;
-
-#[cfg(feature = "tracing")]
-mod tracing_debug;
-
-#[cfg(feature = "tracing")]
-pub(crate) use tracing_debug::*;
 
 #[derive(Eq, Hash, PartialEq, Copy, Clone, Debug)]
 pub enum PanelTypes {

@@ -25,7 +25,7 @@ use web_time::Instant;
 
 use crate::{
     camera_controller::CameraController,
-    panels::{build_panel, panel_title, PanelTypes, ScenePanel, StatsPanel},
+    panels::{build_panel, panel_title, PanelTypes, ScenePanel, StatsPanel, TracingPanel},
     train_loop::{self, TrainMessage},
     PaneType, ViewerTree,
 };
@@ -399,12 +399,16 @@ impl Viewer {
         #[allow(unused_mut)]
         let dummy = tiles.insert_pane(build_panel(&PanelTypes::Dummy, device.clone()));
         let view = tiles.insert_pane(build_panel(&PanelTypes::ViewOptions, device.clone()));
-        let sides = vec![
+        let mut sides = vec![
             view,
-            tiles.insert_pane(Box::new(StatsPanel::new(device, state.adapter.clone()))),
+            tiles.insert_pane(Box::new(StatsPanel::new(device.clone(), state.adapter.clone()))),
             dummy,
         ];
 
+        if cfg!(feature = "tracing") {
+            sides.push(tiles.insert_pane(Box::new(TracingPanel::default())));
+        }
+        
         let side_panel = tiles.insert_vertical_tile(sides);
 
         let scene_pane_id = tiles.insert_pane(Box::new(scene_pane));

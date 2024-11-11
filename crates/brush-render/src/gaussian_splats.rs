@@ -168,19 +168,21 @@ impl<B: Backend> Splats<B> {
         &self,
         camera: &Camera,
         img_size: glam::UVec2,
-        bg_color: glam::Vec3,
         render_u32_buffer: bool,
     ) -> (Tensor<B, 3>, crate::RenderAux<B>) {
+        // TODO: Remove for forward only.
+        let rotations = self.rotation.val();
+        let norm_rot = rotations.clone() / Tensor::sum_dim(rotations.powi_scalar(2), 1).sqrt();
+
         B::render_splats(
             camera,
             img_size,
             self.means.val(),
             self.xys_dummy.clone(),
             self.log_scales.val(),
-            self.rotation.val(),
+            norm_rot,
             self.sh_coeffs.val(),
             self.raw_opacity.val(),
-            bg_color,
             render_u32_buffer,
         )
     }
