@@ -30,6 +30,9 @@ use crate::{
     PaneType, ViewerTree,
 };
 
+#[cfg(target_family = "wasm")]
+use web_sys;
+
 struct TrainStats {
     loss: f32,
     train_image_index: usize,
@@ -141,6 +144,32 @@ fn process_loading_loop(
         Ok(())
     });
 
+    Box::pin(stream)
+}
+
+fn load_ply_from_url(
+    device: WgpuDevice,
+    ply_url: String,
+) -> Pin<Box<impl Stream<Item = anyhow::Result<ViewerMessage>>>> {
+    let stream = try_fn_stream(|emitter| async move {
+        log::info!("Loading PLY from URL: {:?}", ply_url);
+
+        let resp = reqwest::get(&ply_url).await?;
+        let bytes = resp.bytes().await?.to_vec();
+        let splat_stream =
+            splat_import::load_splat_from_ply::<PrimaryBackend>(bytes, device.clone());
+        let mut splat_stream = std::pin::pin!(splat_stream);
+        while let Some(splats) = splat_stream.next().await {
+            emitter
+                .emit(ViewerMessage::Splats {
+                    iter: 0, // For viewing just use "training step 0", bit weird.
+                    splats: Box::new(splats?),
+                })
+                .await;
+        }
+
+        Ok(())
+    });
     Box::pin(stream)
 }
 
@@ -349,6 +378,49 @@ impl ViewerContext {
         }
     }
 
+    pub fn start_load_ply_from_url(&mut self, ply_url: String) {
+        let device = self.device.clone();
+        let (train_sender, _) = async_std::channel::unbounded();
+
+        let (sender, receiver) = async_std::channel::bounded(1);
+
+        self.receiver = Some(receiver);
+        self.sender = Some(train_sender);
+
+        let ctx = self.ctx.clone();
+
+        let fut = async move {
+            // Map errors to a viewer message containing thee error.
+            let mut stream = load_ply_from_url(device, ply_url).map(|m| match m {
+                Ok(m) => m,
+                Err(e) => ViewerMessage::Error(Arc::new(e)),
+            });
+
+            // Loop until there are no more messages, processing is done.
+            while let Some(m) = stream.next().await {
+                ctx.request_repaint();
+
+                // If channel is closed, bail.
+                if sender.send(m).await.is_err() {
+                    break;
+                }
+            }
+        };
+
+        #[cfg(target_family = "wasm")]
+        {
+            web_sys::console::log_1(&format!("Starting async task").into());
+            let fut = crate::async_lib::with_timeout_yield(fut, web_time::Duration::from_millis(5));
+            async_std::task::spawn_local(fut);
+        }
+
+        #[cfg(not(target_family = "wasm"))]
+        {
+            println!("Starting async task");
+            async_std::task::spawn(fut);
+        }
+    }
+
     pub fn send_train_message(&self, message: TrainMessage) {
         if let Some(sender) = self.sender.as_ref() {
             match sender.try_send(message) {
@@ -401,14 +473,17 @@ impl Viewer {
         let view = tiles.insert_pane(build_panel(&PanelTypes::ViewOptions, device.clone()));
         let mut sides = vec![
             view,
-            tiles.insert_pane(Box::new(StatsPanel::new(device.clone(), state.adapter.clone()))),
+            tiles.insert_pane(Box::new(StatsPanel::new(
+                device.clone(),
+                state.adapter.clone(),
+            ))),
             dummy,
         ];
 
         if cfg!(feature = "tracing") {
             sides.push(tiles.insert_pane(Box::new(TracingPanel::default())));
         }
-        
+
         let side_panel = tiles.insert_vertical_tile(sides);
 
         let scene_pane_id = tiles.insert_pane(Box::new(scene_pane));
@@ -423,7 +498,26 @@ impl Viewer {
         let mut tree = egui_tiles::Tree::new("viewer_tree", root_container, tiles);
         tree.set_visible(dummy, false);
 
-        let tree_ctx = ViewerTree { context };
+        let mut tree_ctx = ViewerTree { context };
+
+        #[cfg(target_family = "wasm")]
+        {
+            // Check URL for PLY parameter
+            if let Some(location) = web_sys::window().and_then(|w| w.location().search().ok()) {
+                if let Some(ply_url) = location
+                    .trim_start_matches('?')
+                    .split('&')
+                    .find(|p| p.starts_with("ply="))
+                    .map(|p| p.trim_start_matches("ply="))
+                {
+                    if let Ok(decoded) = js_sys::decode_uri_component(ply_url) {
+                        let decoded = decoded.as_string().unwrap();
+                        log::info!("Loading PLY from URL: {:?}", decoded);
+                        tree_ctx.context.start_load_ply_from_url(decoded);
+                    }
+                }
+            }
+        }
 
         Viewer {
             tree,
