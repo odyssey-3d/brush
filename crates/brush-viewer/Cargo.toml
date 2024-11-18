@@ -12,6 +12,7 @@ brush-train.path = "../brush-train"
 brush-dataset.path = "../brush-dataset"
 brush-kernel.path = "../brush-kernel"
 brush-ui.path = "../brush-ui"
+ody-simplicits.path = "../ody-simplicits"
 
 # Workspace deps.
 glam.workspace = true

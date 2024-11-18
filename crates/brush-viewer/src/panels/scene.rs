@@ -3,17 +3,22 @@ use brush_ui::burn_texture::BurnTexture;
 use burn_wgpu::Wgpu;
 use egui::epaint::mutex::RwLock as EguiRwLock;
 
+use ody_simplicits::model::{load_simplicits_model, SimplicitsModel};
+
 use std::sync::Arc;
 
 use brush_render::gaussian_splats::Splats;
 use eframe::egui_wgpu::Renderer;
 use egui::{Color32, Rect};
 use glam::Affine3A;
+use tokio_stream::StreamExt;
 use tokio_with_wasm::alias as tokio;
+
 use tracing::trace_span;
 use web_time::Instant;
 
 use crate::{
+    simplicits_training::simplicits_training,
     train_loop::TrainMessage,
     viewer::{ViewerContext, ViewerMessage},
     ViewerPanel,
@@ -21,11 +26,11 @@ use crate::{
 
 type Backend = Wgpu;
 
-
 pub(crate) struct ScenePanel {
     pub(crate) backbuffer: BurnTexture,
     pub(crate) last_draw: Option<Instant>,
     pub(crate) last_message: Option<ViewerMessage>,
+    pub(crate) simplicits: Option<SimplicitsModel<Backend>>,
 
     is_loading: bool,
     is_training: bool,
@@ -59,6 +64,7 @@ impl ScenePanel {
             queue,
             device,
             renderer,
+            simplicits: None,
         }
     }
 
@@ -67,7 +73,7 @@ impl ScenePanel {
         ui: &mut egui::Ui,
         context: &mut ViewerContext,
         rect: Rect,
-        splats: &Splats<Wgpu>,
+        splats: &Splats<Backend>,
     ) {
         // If this viewport is re-rendering.
         if ui.ctx().has_requested_repaint() {
@@ -179,6 +185,34 @@ impl ScenePanel {
     }
 }
 
+fn train_simplicits_loop(context: &mut ViewerContext, splats: &Splats<Backend>) {
+    let device = context.device.clone();
+    let positions = splats
+        .means
+        .val()
+        .clone()
+        .into_data()
+        .into_vec::<f32>()
+        .unwrap();
+
+    let fut = async move {
+        let stream = simplicits_training(device, positions);
+        let mut stream = std::pin::pin!(stream);
+        while let Some(message) = stream.next().await {
+            match message {
+                Ok(ViewerMessage::Simplicits { iter, loss }) => {
+                    println!("SIMPLICITS::{} - loss:{}", iter, loss);
+                }
+                _ => {
+                    println!("SIMPLICITS::DONE");
+                    break;
+                }
+            }
+        }
+    };
+    tokio::task::spawn(fut);
+}
+
 impl ViewerPanel for ScenePanel {
     fn title(&self) -> String {
         "Scene".to_owned()
@@ -275,6 +309,15 @@ For bigger training runs consider using the native app."#,
                     }
 
                     let cur_time = Instant::now();
+                    ui.horizontal(|ui| {
+                        if ui.button("Train simplicits").clicked() {
+                            train_simplicits_loop(context, &splats);
+                        }
+                        if ui.button("Load simplicits").clicked() {
+                            self.simplicits =
+                                Some(load_simplicits_model("model.mpk", &context.device));
+                        }
+                    });
 
                     if let Some(last_draw) = self.last_draw {
                         let delta_time = cur_time - last_draw;
@@ -290,7 +333,7 @@ For bigger training runs consider using the native app."#,
                         self.show_splat_options(ui, context, &splats);
                     }
                     self.last_draw = Some(cur_time);
-                    
+
                     // Also redraw next frame, need to check if we're still animating.
                     if self.dirty {
                         ui.ctx().request_repaint();

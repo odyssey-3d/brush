@@ -9,6 +9,7 @@ mod camera_controller;
 
 mod panels;
 mod train_loop;
+mod simplicits_training;
 
 pub mod viewer;
 

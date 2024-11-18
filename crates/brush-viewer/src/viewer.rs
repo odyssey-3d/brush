@@ -81,6 +81,10 @@ pub(crate) enum ViewerMessage {
     ShowTrainingPanel {
         show: bool,
     },
+    Simplicits{
+        iter: u32,
+        loss: f32,
+    },
 }
 
 pub struct Viewer {
@@ -98,7 +102,8 @@ pub(crate) struct ViewerContext {
 
     pub open_panels: BTreeSet<String>,
     pub filename: Option<String>,
-    device: WgpuDevice,
+
+    pub device: WgpuDevice,
     ctx: egui::Context,
 
     sender: Option<Sender<TrainMessage>>,
