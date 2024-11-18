@@ -8,15 +8,16 @@ pub use formats::{load_dataset, load_initial_splat};
 
 use anyhow::Result;
 use async_fn_stream::fn_stream;
-use async_std::stream::Stream;
-use async_std::task::{self, JoinHandle};
 use brush_train::scene::{Scene, SceneView};
 use image::DynamicImage;
 use std::future::Future;
 use std::num::NonZero;
 use std::pin::Pin;
 
-#[derive(Clone)]
+use tokio_stream::Stream;
+use tokio_with_wasm::alias as tokio;
+
+#[derive(Clone, Default)]
 pub struct LoadDatasetArgs {
     pub max_frames: Option<usize>,
     pub max_resolution: Option<u32>,
@@ -26,6 +27,12 @@ pub struct LoadDatasetArgs {
 #[derive(Clone)]
 pub struct LoadInitArgs {
     pub sh_degree: u32,
+}
+
+impl Default for LoadInitArgs {
+    fn default() -> Self {
+        Self { sh_degree: 2 }
+    }
 }
 
 #[derive(Clone)]
@@ -70,32 +77,6 @@ pub(crate) fn clamp_img_to_max_size(image: DynamicImage, max_size: u32) -> Dynam
 
 pub(crate) type DataStream<T> = Pin<Box<dyn Stream<Item = Result<T>> + Send + 'static>>;
 
-/// Spawn a future (on the async executor on native, as a JS promise on web).
-#[cfg(not(target_family = "wasm"))]
-mod async_helpers {
-    use super::*;
-
-    pub(super) fn spawn_future<T: Send + 'static>(
-        future: impl Future<Output = T> + Send + 'static,
-    ) -> JoinHandle<T> {
-        task::spawn(future)
-    }
-}
-
-#[cfg(target_family = "wasm")]
-mod async_helpers {
-    use super::*;
-
-    pub(super) fn spawn_future<T: 'static>(
-        future: impl Future<Output = T> + 'static,
-    ) -> JoinHandle<T> {
-        // On wasm, just spawn locally.
-        task::spawn_local(future)
-    }
-}
-
-pub(crate) use async_helpers::*;
-
 pub(crate) fn stream_fut_parallel<T: Send + 'static>(
     futures: Vec<impl Future<Output = T> + Send + 'static>,
 ) -> impl Stream<Item = T> {
@@ -113,11 +94,11 @@ pub(crate) fn stream_fut_parallel<T: Send + 'static>(
             // Spawn a batch of threads.
             let handles: Vec<_> = futures
                 .drain(..futures.len().min(parallel))
-                .map(|fut| spawn_future(fut))
+                .map(|fut| tokio::task::spawn(fut))
                 .collect();
             // Stream each of them.
             for handle in handles {
-                emitter.emit(handle.await).await;
+                emitter.emit(handle.await.unwrap()).await;
             }
         }
     })

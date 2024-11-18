@@ -2,7 +2,6 @@ use super::{panel_title, PanelTypes};
 use crate::{viewer::ViewerContext, ViewerPanel};
 use brush_dataset::{LoadDatasetArgs, LoadInitArgs};
 use brush_train::train::TrainConfig;
-use burn::lr_scheduler::exponential::ExponentialLrSchedulerConfig;
 use egui::Slider;
 
 enum Quality {
@@ -16,6 +15,8 @@ pub(crate) struct TrainingOptionsPanel {
     eval_split_every: Option<usize>,
     sh_degree: u32,
     quality: Quality,
+    proxy: bool,
+    url: String,
 }
 
 impl TrainingOptionsPanel {
@@ -27,6 +28,8 @@ impl TrainingOptionsPanel {
             eval_split_every: Some(8),
             sh_degree: 3,
             quality: Quality::Normal,
+            proxy: false,
+            url: "splat.com/example.ply".to_owned(),
         }
     }
 }
@@ -39,7 +42,20 @@ impl ViewerPanel for TrainingOptionsPanel {
     fn ui(&mut self, ui: &mut egui::Ui, context: &mut ViewerContext) {
         ui.label("Select a .ply to visualize, or a .zip with training data.");
 
-        if ui.button("Pick a file for training").clicked() {
+        let file = ui.button("Load file for training").clicked();
+
+        ui.add_space(10.0);
+
+        ui.checkbox(&mut self.proxy, "Proxy proxy.brush-splat.workers.dev/")
+            .on_hover_text("File hosting services often don't allow client-side requests. Using a proxy can solve this. In particular this makes google drive share links work!");
+
+        ui.text_edit_singleline(&mut self.url);
+
+        let url = ui.button("Load URL").clicked();
+
+        ui.add_space(10.0);
+
+        if file || url {
             let load_data_args = LoadDatasetArgs {
                 max_frames: self.max_frames,
                 max_resolution: self.max_train_resolution,
@@ -49,27 +65,24 @@ impl ViewerPanel for TrainingOptionsPanel {
                 sh_degree: self.sh_degree,
             };
 
-            // Slightly odd to manage train config here but it'll do for now.
-            let total_steps = 30000;
+            let mut config = TrainConfig::default();
+            if matches!(self.quality, Quality::Low) {
+                config = config
+                    .with_densify_grad_thresh(0.00035)
+                    .with_refine_every(200);
+            }
 
-            let lr_max = 1.6e-4;
-            let decay = 1e-2f64.powf(1.0 / total_steps as f64);
-
-            let grad_thresh = match self.quality {
-                Quality::Normal => 0.0002,
-                Quality::Low => 0.00035,
+            let source = if file {
+                crate::viewer::DataSource::PickFile
+            } else {
+                let url = if !self.proxy {
+                    self.url.to_string()
+                } else {
+                    format!("https://proxy.brush-splat.workers.dev/{}", self.url)
+                };
+                crate::viewer::DataSource::Url(url)
             };
-
-            let refine_every = match self.quality {
-                Quality::Normal => 100,
-                Quality::Low => 200,
-            };
-
-            let config = TrainConfig::new(ExponentialLrSchedulerConfig::new(lr_max, decay))
-                .with_densify_grad_thresh(grad_thresh)
-                .with_refine_every(refine_every);
-
-            context.start_data_load(load_data_args, load_init_args, config);
+            context.start_data_load(source, load_data_args, load_init_args, config);
         }
 
         ui.add_space(10.0);

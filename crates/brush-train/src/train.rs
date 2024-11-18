@@ -29,7 +29,7 @@ pub struct TrainConfig {
     #[config(default = 15000)]
     max_refine_step: u32,
 
-    #[config(default = 0.004)]
+    #[config(default = 0.01)]
     reset_alpha_value: f32,
 
     // threshold of opacity for culling gaussians. One can set it to a lower value (e.g. 0.005) for higher quality
@@ -53,7 +53,7 @@ pub struct TrainConfig {
     #[config(default = 0.005)]
     densify_size_thresh: f32,
 
-    #[config(default = 0.2)]
+    #[config(default = 0.1)]
     ssim_weight: f32,
 
     #[config(default = 11)]
@@ -65,25 +65,37 @@ pub struct TrainConfig {
     // Learning rates.
     lr_mean: ExponentialLrSchedulerConfig,
 
+    #[config(default = 0.9999)]
+    lr_global_decay: f64,
+
     // Learning rate for the basic coefficients.
-    #[config(default = 0.004)]
+    #[config(default = 0.006)]
     lr_coeffs_dc: f64,
 
     // How much to divide the learning rate by for higher SH orders.
-    #[config(default = 20.0)]
+    #[config(default = 15.0)]
     lr_coeffs_sh_scale: f64,
 
-    #[config(default = 0.05)]
+    #[config(default = 0.1)]
     lr_opac: f64,
 
-    #[config(default = 0.01)]
+    #[config(default = 0.02)]
     lr_scale: f64,
 
-    #[config(default = 0.002)]
+    #[config(default = 0.01)]
     lr_rotation: f64,
 
     #[config(default = 42)]
     seed: u64,
+}
+
+impl Default for TrainConfig {
+    fn default() -> Self {
+        let decay_steps = 30000;
+        let lr_max = 3e-4;
+        let decay = 1e-1f64.powf(1.0 / decay_steps as f64);
+        TrainConfig::new(ExponentialLrSchedulerConfig::new(lr_max, decay))
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -254,7 +266,8 @@ where
 
             let loss = (pred_compare - batch.gt_images.clone()).abs().mean();
 
-            let loss = if self.config.ssim_weight > 0.0 {
+            // Disabled on WASM for now. On WebGPU + Metal this unfortunately has glitches.
+            let loss = if self.config.ssim_weight > 0.0 && !cfg!(target_family = "wasm") {
                 let gt_rgb =
                     batch
                         .gt_images
@@ -279,6 +292,16 @@ where
             self.config.lr_scale,
             self.config.lr_coeffs_dc,
             self.config.lr_opac,
+        );
+
+        let global_decay = self.config.lr_global_decay.powf(self.iter as f64);
+
+        let (lr_mean, lr_rotation, lr_scale, lr_coeffs, lr_opac) = (
+            lr_mean * global_decay,
+            lr_rotation * global_decay,
+            lr_scale * global_decay,
+            lr_coeffs * global_decay,
+            lr_opac * global_decay,
         );
 
         trace_span!("Housekeeping", sync_burn = true).in_scope(|| {

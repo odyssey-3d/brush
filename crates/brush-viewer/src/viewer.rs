@@ -5,23 +5,29 @@ use std::{
 };
 
 use async_fn_stream::try_fn_stream;
-use async_std::{
-    channel::{Receiver, Sender, TrySendError},
-    stream::{Stream, StreamExt},
-};
+
 use brush_dataset::{self, splat_import, Dataset, LoadDatasetArgs, LoadInitArgs};
 use brush_render::camera::Camera;
 use brush_render::gaussian_splats::Splats;
-use brush_render::PrimaryBackend;
 use brush_train::train::TrainStepStats;
 use brush_train::{eval::EvalStats, train::TrainConfig};
 use burn::backend::Autodiff;
-use burn_wgpu::WgpuDevice;
+use burn_wgpu::{Wgpu, WgpuDevice};
 use eframe::egui;
-
 use egui_tiles::{Container, Tile, TileId, Tiles};
 use glam::{Quat, Vec3};
+use tokio_with_wasm::alias as tokio;
+
+use ::tokio::io::AsyncReadExt;
+use ::tokio::sync::mpsc::error::TrySendError;
+use ::tokio::sync::mpsc::{Receiver, Sender};
+use ::tokio::{io::AsyncRead, io::BufReader, sync::mpsc::channel};
+use tokio::task;
+
+use tokio_stream::{Stream, StreamExt};
 use web_time::Instant;
+
+type Backend = Wgpu;
 
 use crate::{
     camera_controller::CameraController,
@@ -37,7 +43,7 @@ struct TrainStats {
 
 #[derive(Clone)]
 pub(crate) enum ViewerMessage {
-    PickFile,
+    NewSource,
     StartLoading {
         training: bool,
         filename: String,
@@ -50,7 +56,7 @@ pub(crate) enum ViewerMessage {
     /// Nb: This includes all the intermediately loaded splats.
     Splats {
         iter: u32,
-        splats: Box<Splats<PrimaryBackend>>,
+        splats: Box<Splats<Backend>>,
     },
     /// Loaded a bunch of viewpoints to train on.
     Dataset {
@@ -62,14 +68,14 @@ pub(crate) enum ViewerMessage {
     },
     /// Some number of training steps are done.
     TrainStep {
-        stats: Box<TrainStepStats<Autodiff<PrimaryBackend>>>,
+        stats: Box<TrainStepStats<Autodiff<Backend>>>,
         iter: u32,
         timestamp: Instant,
     },
     /// Eval was run sucesfully with these results.
     EvalResult {
         iter: u32,
-        eval: EvalStats<PrimaryBackend>,
+        eval: EvalStats<Backend>,
     },
     //show training panel
     ShowTrainingPanel {
@@ -92,7 +98,6 @@ pub(crate) struct ViewerContext {
 
     pub open_panels: BTreeSet<String>,
     pub filename: Option<String>,
-
     device: WgpuDevice,
     ctx: egui::Context,
 
@@ -101,27 +106,33 @@ pub(crate) struct ViewerContext {
 }
 
 fn process_loading_loop(
+    source: DataSource,
     device: WgpuDevice,
 ) -> Pin<Box<impl Stream<Item = anyhow::Result<ViewerMessage>>>> {
     let stream = try_fn_stream(|emitter| async move {
-        let _ = emitter.emit(ViewerMessage::PickFile).await;
-        log::warn!("Start picking file");
-        let picked = rrfd::pick_file().await?;
-        let name = picked.file_name();
+        let _ = emitter.emit(ViewerMessage::NewSource).await;
 
-        log::warn!("Got file {name}");
+        // Small hack to peek some bytes: Read them
+        // and add them at the start again.
+        let (data, filename) = source.read().await?;
+        let mut data = BufReader::new(data);
+        let mut peek = [0; 128];
+        data.read_exact(&mut peek).await?;
+        let data = std::io::Cursor::new(peek).chain(data);
 
-        if name.contains(".ply") {
-            let data = picked.read().await;
+        log::info!("{:?}", String::from_utf8(peek.to_vec()));
+
+        if peek.starts_with("ply".as_bytes()) {
+            log::info!("Attempting to load data as .ply data");
 
             let _ = emitter
                 .emit(ViewerMessage::StartLoading {
                     training: false,
-                    filename: name,
+                    filename,
                 })
                 .await;
-            let splat_stream =
-                splat_import::load_splat_from_ply::<PrimaryBackend>(data, device.clone());
+            let splat_stream = splat_import::load_splat_from_ply(data, device.clone());
+
             let mut splat_stream = std::pin::pin!(splat_stream);
             while let Some(splats) = splat_stream.next().await {
                 emitter
@@ -132,8 +143,10 @@ fn process_loading_loop(
                     .await;
             }
             emitter
-                .emit(ViewerMessage::DoneLoading { training: true })
+                .emit(ViewerMessage::DoneLoading { training: false })
                 .await;
+        } else if peek.starts_with("<!DOCTYPE html>".as_bytes()) {
+            anyhow::bail!("Failed to download data (are you trying to download from Google Drive? You might have to use the proxy.")
         } else {
             anyhow::bail!("Only .ply files are supported for viewing.")
         }
@@ -145,6 +158,7 @@ fn process_loading_loop(
 }
 
 fn process_loop(
+    source: DataSource,
     device: WgpuDevice,
     train_receiver: Receiver<TrainMessage>,
     load_data_args: LoadDatasetArgs,
@@ -152,24 +166,29 @@ fn process_loop(
     train_config: TrainConfig,
 ) -> Pin<Box<impl Stream<Item = anyhow::Result<ViewerMessage>>>> {
     let stream = try_fn_stream(|emitter| async move {
-        let _ = emitter.emit(ViewerMessage::PickFile).await;
-        log::info!("Start picking file");
-        let picked = rrfd::pick_file().await?;
-        let name = picked.file_name();
+        let _ = emitter.emit(ViewerMessage::NewSource).await;
 
-        log::info!("Picked file {name}");
+        // Small hack to peek some bytes: Read them
+        // and add them at the start again.
+        let (data, filename) = source.read().await?;
+        let mut data = BufReader::new(data);
+        let mut peek = [0; 128];
+        data.read_exact(&mut peek).await?;
+        let data = std::io::Cursor::new(peek).chain(data);
 
-        if name.contains(".ply") {
-            let data = picked.read().await;
+        log::info!("{:?}", String::from_utf8(peek.to_vec()));
+
+        if peek.starts_with("ply".as_bytes()) {
+            log::info!("Attempting to load data as .ply data");
 
             let _ = emitter
                 .emit(ViewerMessage::StartLoading {
                     training: false,
-                    filename: name,
+                    filename,
                 })
                 .await;
-            let splat_stream =
-                splat_import::load_splat_from_ply::<PrimaryBackend>(data, device.clone());
+            let splat_stream = splat_import::load_splat_from_ply(data, device.clone());
+
             let mut splat_stream = std::pin::pin!(splat_stream);
             while let Some(splats) = splat_stream.next().await {
                 emitter
@@ -180,14 +199,15 @@ fn process_loop(
                     .await;
             }
             emitter
-                .emit(ViewerMessage::DoneLoading { training: true })
+                .emit(ViewerMessage::DoneLoading { training: false })
                 .await;
-        } else if name.contains(".zip") {
-            let data = picked.read().await;
+        } else if peek.starts_with("PK".as_bytes()) {
+            log::info!("Attempting to load data as .zip data");
+
             let _ = emitter
                 .emit(ViewerMessage::StartLoading {
                     training: true,
-                    filename: name,
+                    filename,
                 })
                 .await;
 
@@ -203,8 +223,13 @@ fn process_loop(
             while let Some(message) = stream.next().await {
                 emitter.emit(message?).await;
             }
+            emitter
+                .emit(ViewerMessage::DoneLoading { training: true })
+                .await;
+        } else if peek.starts_with("<!DOCTYPE html>".as_bytes()) {
+            anyhow::bail!("Failed to download data (are you trying to download from Google Drive? You might have to use the proxy.")
         } else {
-            anyhow::bail!("Only .ply and .zip files are supported.")
+            anyhow::bail!("only zip and ply files are supported.");
         }
 
         Ok(())
@@ -213,26 +238,60 @@ fn process_loop(
     Box::pin(stream)
 }
 
+#[derive(Debug)]
+pub enum DataSource {
+    PickFile,
+    Url(String),
+}
+
+#[cfg(target_family = "wasm")]
+type DataRead = Pin<Box<dyn AsyncRead>>;
+
+#[cfg(not(target_family = "wasm"))]
+type DataRead = Pin<Box<dyn AsyncRead + Send>>;
+
+impl DataSource {
+    async fn read(&self) -> anyhow::Result<(DataRead, String)> {
+        match self {
+            DataSource::PickFile => {
+                let picked = rrfd::pick_file().await?;
+                let data = picked.read().await;
+                Ok((Box::pin(std::io::Cursor::new(data)), picked.file_name()))
+            }
+            DataSource::Url(url) => {
+                let mut url = url.to_owned();
+                if !url.starts_with("http://") && !url.starts_with("https://") {
+                    url = format!("https://{}", url);
+                }
+                let response = reqwest::get(url.clone()).await?.bytes_stream();
+                let mapped = response
+                    .map(|e| e.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e)));
+                Ok((Box::pin(tokio_util::io::StreamReader::new(mapped)), url))
+            }
+        }
+    }
+}
+
 impl ViewerContext {
     fn new(device: WgpuDevice, ctx: egui::Context) -> Self {
         Self {
             camera: Camera::new(
                 -Vec3::Z * 5.0,
                 Quat::IDENTITY,
-                0.866,
+                0.5,
                 0.5,
                 glam::vec2(0.5, 0.5),
             ),
             controls: CameraController::new(),
-            open_panels: BTreeSet::from([
-                panel_title(&PanelTypes::ViewOptions).to_owned(),
-                panel_title(&PanelTypes::Stats).to_owned(),
-            ]),
             device,
             ctx,
             dataset: Dataset::empty(),
             receiver: None,
             sender: None,
+            open_panels: BTreeSet::from([
+                panel_title(&PanelTypes::ViewOptions).to_owned(),
+                panel_title(&PanelTypes::Stats).to_owned(),
+            ]),
             filename: None,
         }
     }
@@ -246,13 +305,13 @@ impl ViewerContext {
                 * 0.5;
     }
 
-    pub(crate) fn start_ply_load(&mut self) {
+    pub(crate) fn start_ply_load(&mut self, source: DataSource) {
         let device = self.device.clone();
         log::info!("Start data load");
 
         // Create a small channel. We don't want 10 updated splats to be stuck in the queue eating up memory!
         // Bigger channels could mean the train loop spends less time waiting for the UI though.
-        let (sender, receiver) = async_std::channel::bounded(1);
+        let (sender, receiver) = channel(1);
 
         self.receiver = Some(receiver);
         self.sender = None;
@@ -262,7 +321,7 @@ impl ViewerContext {
 
         let fut = async move {
             // Map errors to a viewer message containing thee error.
-            let mut stream = process_loading_loop(device).map(|m| match m {
+            let mut stream = process_loading_loop(source, device).map(|m| match m {
                 Ok(m) => m,
                 Err(e) => ViewerMessage::Error(Arc::new(e)),
             });
@@ -271,6 +330,10 @@ impl ViewerContext {
             while let Some(m) = stream.next().await {
                 ctx.request_repaint();
 
+                // Give back to the runtime for a second.
+                // This only really matters in the browser.
+                tokio::task::yield_now().await;
+
                 // If channel is closed, bail.
                 if sender.send(m).await.is_err() {
                     break;
@@ -278,33 +341,25 @@ impl ViewerContext {
             }
         };
 
-        #[cfg(target_family = "wasm")]
-        {
-            let fut = crate::async_lib::with_timeout_yield(fut, web_time::Duration::from_millis(5));
-            async_std::task::spawn_local(fut);
-        }
-
-        #[cfg(not(target_family = "wasm"))]
-        {
-            async_std::task::spawn(fut);
-        }
+        task::spawn(fut);
     }
 
     pub(crate) fn start_data_load(
         &mut self,
+        source: DataSource,
         load_data_args: LoadDatasetArgs,
         load_init_args: LoadInitArgs,
         train_config: TrainConfig,
     ) {
         let device = self.device.clone();
-        log::info!("Start data load");
+        log::info!("Start data load {source:?}");
 
         // create a channel for the train loop.
-        let (train_sender, train_receiver) = async_std::channel::unbounded();
+        let (train_sender, train_receiver) = channel(32);
 
         // Create a small channel. We don't want 10 updated splats to be stuck in the queue eating up memory!
         // Bigger channels could mean the train loop spends less time waiting for the UI though.
-        let (sender, receiver) = async_std::channel::bounded(1);
+        let (sender, receiver) = channel(1);
 
         self.receiver = Some(receiver);
         self.sender = Some(train_sender);
@@ -315,6 +370,7 @@ impl ViewerContext {
         let fut = async move {
             // Map errors to a viewer message containing thee error.
             let mut stream = process_loop(
+                source,
                 device,
                 train_receiver,
                 load_data_args,
@@ -330,6 +386,10 @@ impl ViewerContext {
             while let Some(m) = stream.next().await {
                 ctx.request_repaint();
 
+                // Give back to the runtime for a second.
+                // This only really matters in the browser.
+                tokio::task::yield_now().await;
+
                 // If channel is closed, bail.
                 if sender.send(m).await.is_err() {
                     break;
@@ -337,16 +397,7 @@ impl ViewerContext {
             }
         };
 
-        #[cfg(target_family = "wasm")]
-        {
-            let fut = crate::async_lib::with_timeout_yield(fut, web_time::Duration::from_millis(5));
-            async_std::task::spawn_local(fut);
-        }
-
-        #[cfg(not(target_family = "wasm"))]
-        {
-            async_std::task::spawn(fut);
-        }
+        task::spawn(fut);
     }
 
     pub fn send_train_message(&self, message: TrainMessage) {
@@ -386,6 +437,18 @@ impl Viewer {
             }
         }
 
+        let mut start_url = None;
+        if cfg!(target_family = "wasm") {
+            if let Some(window) = web_sys::window() {
+                if let Ok(search) = window.location().search() {
+                    if let Ok(search_params) = web_sys::UrlSearchParams::new_with_str(&search) {
+                        let url = search_params.get("url");
+                        start_url = url;
+                    }
+                }
+            }
+        }
+
         let mut tiles: Tiles<PaneType> = egui_tiles::Tiles::default();
 
         let context = ViewerContext::new(device.clone(), cc.egui_ctx.clone());
@@ -401,14 +464,17 @@ impl Viewer {
         let view = tiles.insert_pane(build_panel(&PanelTypes::ViewOptions, device.clone()));
         let mut sides = vec![
             view,
-            tiles.insert_pane(Box::new(StatsPanel::new(device.clone(), state.adapter.clone()))),
+            tiles.insert_pane(Box::new(StatsPanel::new(
+                device.clone(),
+                state.adapter.clone(),
+            ))),
             dummy,
         ];
 
         if cfg!(feature = "tracing") {
             sides.push(tiles.insert_pane(Box::new(TracingPanel::default())));
         }
-        
+
         let side_panel = tiles.insert_vertical_tile(sides);
 
         let scene_pane_id = tiles.insert_pane(Box::new(scene_pane));
@@ -423,7 +489,16 @@ impl Viewer {
         let mut tree = egui_tiles::Tree::new("viewer_tree", root_container, tiles);
         tree.set_visible(dummy, false);
 
-        let tree_ctx = ViewerTree { context };
+        let mut tree_ctx = ViewerTree { context };
+
+        if let Some(start_url) = start_url {
+            tree_ctx.context.start_data_load(
+                DataSource::Url(start_url.to_owned()),
+                LoadDatasetArgs::default(),
+                LoadInitArgs::default(),
+                TrainConfig::default(),
+            );
+        }
 
         Viewer {
             tree,
@@ -465,8 +540,14 @@ fn check_for_panel_status(
 
 impl eframe::App for Viewer {
     fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
-        if let Some(rec) = self.tree_ctx.context.receiver.clone() {
+        if let Some(rec) = self.tree_ctx.context.receiver.as_mut() {
+            let mut messages = vec![];
+
             while let Ok(message) = rec.try_recv() {
+                messages.push(message);
+            }
+
+            for message in messages {
                 match message.clone() {
                     ViewerMessage::StartLoading {
                         training: _,
@@ -540,12 +621,12 @@ impl eframe::App for Viewer {
                         if self.tree_ctx.context.filename.is_none() {
                             ui.heading("<No Scene loaded>");
                             if ui.button("...").clicked() {
-                                self.tree_ctx.context.start_ply_load();
+                                self.tree_ctx.context.start_ply_load(DataSource::PickFile);
                             }
                         } else {
                             ui.heading(self.tree_ctx.context.filename.as_ref().unwrap());
                             if ui.button("...").clicked() {
-                                self.tree_ctx.context.start_ply_load();
+                                self.tree_ctx.context.start_ply_load(DataSource::PickFile);
                             }
                         }
                     });

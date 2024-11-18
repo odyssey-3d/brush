@@ -1,5 +1,6 @@
 use brush_dataset::splat_export;
 use brush_ui::burn_texture::BurnTexture;
+use burn_wgpu::Wgpu;
 use egui::epaint::mutex::RwLock as EguiRwLock;
 
 use std::sync::Arc;
@@ -8,6 +9,7 @@ use brush_render::gaussian_splats::Splats;
 use eframe::egui_wgpu::Renderer;
 use egui::{Color32, Rect};
 use glam::Affine3A;
+use tokio_with_wasm::alias as tokio;
 use tracing::trace_span;
 use web_time::Instant;
 
@@ -16,6 +18,9 @@ use crate::{
     viewer::{ViewerContext, ViewerMessage},
     ViewerPanel,
 };
+
+type Backend = Wgpu;
+
 
 pub(crate) struct ScenePanel {
     pub(crate) backbuffer: BurnTexture,
@@ -62,10 +67,10 @@ impl ScenePanel {
         ui: &mut egui::Ui,
         context: &mut ViewerContext,
         rect: Rect,
-        splats: &Splats<brush_render::PrimaryBackend>,
+        splats: &Splats<Wgpu>,
     ) {
         // If this viewport is re-rendering.
-        if ui.ctx().has_requested_repaint() && self.dirty {
+        if ui.ctx().has_requested_repaint() {
             let _span = trace_span!("Render splats").entered();
             let size = glam::uvec2(1024, 1024);
             let (img, _) = splats.render(&context.camera, size, true);
@@ -107,7 +112,7 @@ impl ScenePanel {
         &mut self,
         ui: &mut egui::Ui,
         context: &mut ViewerContext,
-        splats: &Splats<brush_render::PrimaryBackend>,
+        splats: &Splats<Backend>,
     ) -> egui::InnerResponse<()> {
         ui.horizontal(|ui| {
             if self.is_training {
@@ -167,10 +172,7 @@ impl ScenePanel {
                         }
                     };
 
-                    #[cfg(target_family = "wasm")]
-                    async_std::task::spawn_local(fut);
-                    #[cfg(not(target_family = "wasm"))]
-                    async_std::task::spawn(fut);
+                    tokio::task::spawn(fut);
                 }
             }
         })
@@ -184,7 +186,7 @@ impl ViewerPanel for ScenePanel {
 
     fn on_message(&mut self, message: ViewerMessage, _: &mut ViewerContext) {
         match message.clone() {
-            ViewerMessage::PickFile => {
+            ViewerMessage::NewSource => {
                 self.last_message = None;
                 self.paused = false;
                 self.is_loading = false;
@@ -234,12 +236,13 @@ Or load a dataset to train on. These are zip files with:
             #[cfg(target_family = "wasm")]
             ui.scope(|ui| {
                 ui.visuals_mut().override_text_color = Some(Color32::YELLOW);
-                ui.heading("Note: Running in browser is experimental");
+                ui.heading("Note: Running in browser is still experimental");
 
                 ui.label(
                     r#"
-In browser training is about 2x lower than the native app. For bigger training
-runs consider using the native app."#,
+In browser training is slower, and lower quality than the native app.
+
+For bigger training runs consider using the native app."#,
                 );
             });
 
@@ -251,6 +254,7 @@ runs consider using the native app."#,
                 context.camera.rotation,
                 context.camera.position,
             )
+            || context.controls.is_animating()
         {
             self.dirty = true;
         }
@@ -286,6 +290,11 @@ runs consider using the native app."#,
                         self.show_splat_options(ui, context, &splats);
                     }
                     self.last_draw = Some(cur_time);
+                    
+                    // Also redraw next frame, need to check if we're still animating.
+                    if self.dirty {
+                        ui.ctx().request_repaint();
+                    }
                 }
                 _ => {}
             }
