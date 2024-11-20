@@ -30,8 +30,8 @@ pub(crate) fn simplicits_training(
         let num_batch = 8;
         let num_handles = 10;
         let num_samples = 16;
-        let num_steps = 1000;
-        let log_every_n = 100;
+        let num_steps = 10000;
+        let log_every_n = 1000;
 
         // Physics material parameters
         // youngs_modulus = 1e5

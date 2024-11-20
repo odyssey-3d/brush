@@ -1,8 +1,10 @@
 use brush_dataset::splat_export;
 use brush_ui::burn_texture::BurnTexture;
+use burn::tensor::Tensor;
 use burn_wgpu::Wgpu;
 use egui::epaint::mutex::RwLock as EguiRwLock;
 
+use ody_simplicits::utils::calculate_inverse;
 use ody_simplicits::model::{load_simplicits_model, SimplicitsModel};
 
 use std::sync::Arc;
@@ -316,6 +318,33 @@ For bigger training runs consider using the native app."#,
                         if ui.button("Load simplicits").clicked() {
                             self.simplicits =
                                 Some(load_simplicits_model("model.mpk", &context.device));
+                        }
+                        if ui.button("Test").clicked() {
+                            let device = &context.device;
+                            let tensor = (1..10000)
+                                // .map(|i| Tensor::<Backend, 2>::eye(3, device).unsqueeze() * i as f32)
+                                // .map(|i| {
+                                //     Tensor::<Backend, 2>::ones([3, 3], device).unsqueeze()
+                                //         * i as f32
+                                // })
+                                .map(|i| {
+                                    Tensor::<Backend, 2>::from_floats(
+                                        [[0.0, -3.0, -2.0], [1.0, -4.0, -2.0], [-3.0, 4.0, 1.0]],
+                                        device,
+                                    )
+                                    .unsqueeze()
+                                        * i as f32
+                                })
+                                .collect::<Vec<_>>();
+
+                            let start = Instant::now();
+                            let tensor = Tensor::cat(tensor, 0);
+                            let end1 = Instant::now();
+                            let output = calculate_inverse(tensor);
+                            let end2 = Instant::now();
+                            println!("time build tensor: {:?}", end1 - start);
+                            println!("calculate: {:?}", end2 - end1);
+                            println!("output: {}", output);
                         }
                     });
 

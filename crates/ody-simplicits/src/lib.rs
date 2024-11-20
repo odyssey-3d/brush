@@ -1,3 +1,5 @@
-pub mod model;
 pub mod losses;
-pub(crate) mod materials;
+pub mod model;
+pub mod utils;
+
+mod materials;
