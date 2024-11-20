@@ -2,4 +2,6 @@ pub mod losses;
 pub mod model;
 pub mod utils;
 
-mod materials;
+pub(crate) mod materials;
+pub(crate) mod physics;
+pub(crate) mod sampling;

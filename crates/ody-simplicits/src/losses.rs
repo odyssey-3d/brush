@@ -1,4 +1,6 @@
 use super::model::SimplicitsModel;
+use crate::sampling::randomly_sample_points;
+
 use burn::{
     nn::loss::{MseLoss, Reduction},
     prelude::*,
@@ -111,19 +113,6 @@ fn weighted_linear_blend_skinning<B: Backend>(
     linear_blend_skinning(x0, transforms, w_x0)
 }
 
-fn random_sample<B: Backend>(
-    num_samples: usize,
-    num_points: usize,
-    device: &B::Device,
-) -> Tensor<B, 1, Int> {
-    let u = Tensor::<B, 1>::random(
-        [num_samples],
-        burn::tensor::Distribution::Uniform(0.0, 1.0),
-        device,
-    ) * ((num_points - 1) as f32);
-    u.int()
-}
-
 pub(crate) fn loss_elastic<B: Backend>(
     model: &SimplicitsModel<B>,
     pts: &Tensor<B, 2>,
@@ -199,11 +188,15 @@ pub fn compute_losses<B: Backend>(
         device,
     ) * 0.1;
 
-    let sample_indices = random_sample(num_samples, num_points, device);
-    let sampled_points = normalized_pts.clone().select(0, sample_indices.clone());
-    let sampled_yms = yms.clone().select(0, sample_indices.clone());
-    let sampled_prs = prs.clone().select(0, sample_indices.clone());
-    let sampled_rhos = rhos.clone().select(0, sample_indices.clone());
+    let (sampled_points, sampled_yms, sampled_prs, sampled_rhos) = randomly_sample_points(
+        num_samples,
+        num_points,
+        device,
+        normalized_pts,
+        yms,
+        prs,
+        rhos,
+    );
 
     let weights = model.forward(sampled_points.clone());
     let le = loss_elastic(
@@ -220,3 +213,4 @@ pub fn compute_losses<B: Backend>(
     let lo = loss_ortho(weights, device) * lo_coeff;
     (le, lo)
 }
+

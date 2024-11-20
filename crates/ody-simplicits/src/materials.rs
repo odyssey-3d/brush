@@ -118,3 +118,33 @@ pub(crate) fn neohookean_energy<B: Backend>(
 
     w
 }
+
+#[allow(dead_code)]
+pub fn neohookean_gradient<B: Backend>(
+    mu: Tensor<B, 3>,
+    lambda: Tensor<B, 3>,
+    deformation_gradient: Tensor<B, 5>,
+) -> Tensor<B, 3> {
+    let dims = deformation_gradient.shape();
+    let batch_dims = Shape::from(dims.dims[..dims.num_dims() - 2].to_vec());
+
+    let deformation_gradient = deformation_gradient.reshape([batch_dims.num_elements(), 3, 3]);
+    let inv_f = calculate_inverse(deformation_gradient.clone());
+    let j = calculate_determinant(deformation_gradient.clone()).reshape::<3, _>(batch_dims);
+
+    // Calculate the gradients of Energy w.r.t F
+    // Energy = (mu/2)I1 - (mu/2)*3   + D1*(J-1)^2  - mu*J + mu
+
+    // g1 = d (mu/2)*I1 / dF ==> (mu/2) d tr(F^TF)/dF = (mu/2)*2*F
+    let g1 = mu.clone() * deformation_gradient.clone();
+
+    // g2 d (lam/2)*(J-1)^2 / dF ==> (lam/2) d (J-1)^2/dF = (lam/2) * 2*(J-1) * dJ/dF ==> (lam/2) * 2*(J-1) * J*F^-1
+    let one = Tensor::full_like(&j, 1.0);
+    let j_minus_1 = j.clone() - one;
+    let g2 = lambda.clone() * j_minus_1 * j.clone() * inv_f.clone();
+
+    // g3 d -mu*J / dF ==> -mu dJ/dF = -mu J F^-1
+    let g3 = -mu * j * inv_f;
+
+    g1 + g2 + g3
+}
