@@ -40,7 +40,7 @@ impl ViewerPanel for DatasetPanel {
         panel_title(&PanelTypes::Datasets).to_owned()
     }
 
-    fn on_message(&mut self, message: ViewerMessage, context: &mut ViewerContext) {
+    fn on_message(&mut self, message: &ViewerMessage, context: &mut ViewerContext) {
         match message {
             ViewerMessage::NewSource => {
                 self.loading = false;
@@ -49,14 +49,14 @@ impl ViewerPanel for DatasetPanel {
                 training,
                 filename: _,
             } => {
-                self.loading = training;
+                self.loading = *training;
             }
             ViewerMessage::Dataset { data: d } => {
                 // Set train view to last loaded camera.
                 if let Some(view) = d.train.views.last() {
                     context.focus_view(&view.camera);
                 }
-                context.dataset = d;
+                context.dataset = d.clone();
             }
             ViewerMessage::DoneLoading { training: _ } => {
                 self.loading = false;
@@ -102,8 +102,12 @@ impl ViewerPanel for DatasetPanel {
 
             if let Some(selected) = self.selected_view.as_ref() {
                 let img_size = selected.2.size();
+                let mut available_size = ui.available_size();
+                // Always keep some margin at the bottom
+                available_size.y -= 50.0;
+
                 let size = egui::Image::new(&selected.2).shrink_to_fit().calc_size(
-                    ui.available_size(),
+                    available_size,
                     Some(egui::vec2(img_size[0] as f32, img_size[1] as f32)),
                 );
                 let min = ui.cursor().min;

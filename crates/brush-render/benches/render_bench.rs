@@ -33,6 +33,7 @@ fn generate_bench_data() -> anyhow::Result<()> {
     let num_points = 2usize.pow(21); //  Maxmimum number of splats to bench.
 
     let device = WgpuDevice::DefaultDevice;
+
     let means = Tensor::<DiffBack, 2>::random(
         [num_points, 3],
         burn::tensor::Distribution::Uniform(-0.5, 0.5),
@@ -151,13 +152,12 @@ fn bench_general(
     let tensors = SafeTensors::deserialize(&buffer).unwrap();
     let splats = Splats::<DiffBack>::from_safetensors(&tensors, &device).unwrap();
     let num_points = (splats.num_splats() as f32 * dens) as usize;
-    let splats = Splats::from_data(
+    let splats = Splats::from_tensor_data(
         (splats.means.val() * mean_mult).slice([0..num_points]),
-        splats.sh_coeffs.val().slice([0..num_points]),
         splats.rotation.val().slice([0..num_points]),
-        splats.raw_opacity.val().slice([0..num_points]),
         splats.log_scales.val().slice([0..num_points]),
-        &device,
+        splats.sh_coeffs.val().slice([0..num_points]),
+        splats.raw_opacity.val().slice([0..num_points]),
     );
     let [w, h] = resolution.into();
     let fov = std::f64::consts::PI * 0.5;
@@ -179,7 +179,7 @@ fn bench_general(
                 let _ = out.0.mean().backward();
             }
             // Wait for GPU work.
-            <Wgpu as burn::prelude::Backend>::sync(&WgpuDevice::DefaultDevice);
+            <Wgpu as burn::prelude::Backend>::sync(&device);
         });
     } else {
         // Run with no autodiff graph.
@@ -190,7 +190,7 @@ fn bench_general(
                 let _ = splats.render(&camera, resolution, true);
             }
             // Wait for GPU work.
-            <Wgpu as burn::prelude::Backend>::sync(&WgpuDevice::DefaultDevice);
+            <Wgpu as burn::prelude::Backend>::sync(&device);
         });
     }
 }

@@ -42,6 +42,10 @@ pub fn sh_degree_from_coeffs(coeffs_per_channel: u32) -> u32 {
     }
 }
 
+pub fn rgb_to_sh(rgb: f32) -> f32 {
+    (rgb - 0.5) / shaders::gather_grads::SH_C0
+}
+
 pub(crate) fn render_forward(
     camera: &Camera,
     img_size: glam::UVec2,
@@ -52,6 +56,11 @@ pub(crate) fn render_forward(
     raw_opacities: JitTensor<WgpuRuntime, f32>,
     raster_u32: bool,
 ) -> (JitTensor<WgpuRuntime, f32>, RenderAux<InnerWgpu>) {
+    assert!(
+        img_size[0] > 0 && img_size[1] > 0,
+        "Can't render 0 sized images"
+    );
+
     let device = &means.device.clone();
     let client = means.client.clone();
 
@@ -89,9 +98,11 @@ pub(crate) fn render_forward(
     // Tile rendering setup.
     let sh_degree = sh_degree_from_coeffs(sh_coeffs.shape.dims[1] as u32);
     let total_splats = means.shape.dims[0] as u32;
+
     let uniforms_buffer = create_uniform_buffer(
         shaders::helpers::RenderUniforms {
             viewmat: camera.world_to_local().to_cols_array_2d(),
+            camera_position: [camera.position.x, camera.position.y, camera.position.z, 0.0],
             focal: camera.focal(img_size).into(),
             pixel_center: camera.center(img_size).into(),
             img_size: img_size.into(),
@@ -572,7 +583,7 @@ mod tests {
             let fov_y = focal_to_fov(focal, h as u32);
 
             let cam = Camera::new(
-                glam::vec3(0.0, 0.0, -8.0),
+                glam::vec3(0.123, -0.123, -8.0),
                 glam::Quat::IDENTITY,
                 fov_x,
                 fov_y,
@@ -627,14 +638,6 @@ mod tests {
             let v_xys_ref =
                 safetensor_to_burn::<DiffBack, 2>(tensors.tensor("v_xy")?, &device).inner();
             let v_xys = splats.xys_dummy.grad(&grads).context("no xys grad")?;
-
-            let v_xys_data = v_xys.to_data().to_vec::<f32>().unwrap();
-            let v_xys_ref_data = v_xys_ref.to_data().to_vec::<f32>().unwrap();
-
-            for (i, (xy, ref_xy)) in v_xys_data.iter().zip(v_xys_ref_data.iter()).enumerate() {
-                println!("xy[{}] {:.12} != ref {:.12}", i, xy, ref_xy);
-            }
-
             assert!(v_xys.all_close(v_xys_ref, Some(1e-5), Some(1e-9)));
 
             let v_opacities_ref =
@@ -671,7 +674,6 @@ mod tests {
     //     let num_points = 1;
 
     //     let img_size = glam::uvec2(16, 16);
-    //     let device = WgpuDevice::BestAvailable;
 
     //     let means = Tensor::<DiffBack, 2, _>::zeros([num_points, 3], &device).require_grad();
     //     let log_scales = Tensor::ones([num_points, 3], &device).require_grad();

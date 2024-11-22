@@ -60,6 +60,6 @@ impl ViewerPanel for ViewerOptionsPanel {
             });
         });
 
-        context.controls.show_ui_controls(ui, &mut context.camera);
+        context.controls.show_ui_controls(ui);
     }
 }

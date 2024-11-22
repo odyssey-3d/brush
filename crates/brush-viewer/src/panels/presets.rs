@@ -1,5 +1,8 @@
 use super::{panel_title, PanelTypes};
-use crate::{viewer::ViewerContext, ViewerPanel};
+use crate::{
+    viewer::{ViewerContext, ViewerMessage},
+    ViewerPanel,
+};
 use egui::Hyperlink;
 
 pub(crate) struct PresetsPanel {}
@@ -21,7 +24,7 @@ impl ViewerPanel for PresetsPanel {
         panel_title(&PanelTypes::Presets).to_owned()
     }
 
-    fn on_message(&mut self, _: crate::viewer::ViewerMessage, _: &mut ViewerContext) {}
+    fn on_message(&mut self, _: &ViewerMessage, _: &mut ViewerContext) {}
 
     fn ui(&mut self, ui: &mut egui::Ui, _: &mut ViewerContext) {
         ui.heading("Mipnerf scenes");

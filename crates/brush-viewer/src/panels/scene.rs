@@ -1,14 +1,17 @@
 use brush_dataset::splat_export;
 use brush_ui::burn_texture::BurnTexture;
 use burn_wgpu::Wgpu;
+use core::f32;
 use egui::epaint::mutex::RwLock as EguiRwLock;
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
-use brush_render::gaussian_splats::Splats;
+use brush_render::{
+    camera::{focal_to_fov, fov_to_focal},
+    gaussian_splats::Splats,
+};
 use eframe::egui_wgpu::Renderer;
 use egui::{Color32, Rect};
-use glam::Affine3A;
 use tokio_with_wasm::alias as tokio;
 use tracing::trace_span;
 use web_time::Instant;
@@ -21,18 +24,21 @@ use crate::{
 
 type Backend = Wgpu;
 
-
 pub(crate) struct ScenePanel {
     pub(crate) backbuffer: BurnTexture,
     pub(crate) last_draw: Option<Instant>,
-    pub(crate) last_message: Option<ViewerMessage>,
+
+    view_splats: Vec<Splats<Wgpu>>,
+    frame: f32,
+    err: Option<Arc<anyhow::Error>>,
 
     is_loading: bool,
+
     is_training: bool,
     live_update: bool,
     paused: bool,
 
-    last_cam_trans: Affine3A,
+    last_size: glam::UVec2,
     dirty: bool,
 
     queue: Arc<wgpu::Queue>,
@@ -47,13 +53,15 @@ impl ScenePanel {
         renderer: Arc<EguiRwLock<Renderer>>,
     ) -> Self {
         Self {
+            frame: 0.0,
             backbuffer: BurnTexture::new(device.clone(), queue.clone()),
             last_draw: None,
-            last_message: None,
+            err: None,
+            view_splats: vec![],
             live_update: true,
             paused: false,
             dirty: true,
-            last_cam_trans: Affine3A::IDENTITY,
+            last_size: glam::UVec2::ZERO,
             is_loading: false,
             is_training: false,
             queue,
@@ -70,12 +78,13 @@ impl ScenePanel {
         splats: &Splats<Wgpu>,
     ) {
         // If this viewport is re-rendering.
-        if ui.ctx().has_requested_repaint() {
+        if ui.ctx().has_requested_repaint() && self.dirty {
             let _span = trace_span!("Render splats").entered();
             let size = glam::uvec2(1024, 1024);
             let (img, _) = splats.render(&context.camera, size, true);
             self.backbuffer.update_texture(img, self.renderer.clone());
             self.dirty = false;
+            self.last_size = size;
         }
 
         if let Some(id) = self.backbuffer.id() {
@@ -113,8 +122,36 @@ impl ScenePanel {
         ui: &mut egui::Ui,
         context: &mut ViewerContext,
         splats: &Splats<Backend>,
+        delta_time: Duration,
     ) -> egui::InnerResponse<()> {
         ui.horizontal(|ui| {
+            if self.is_loading {
+                ui.horizontal(|ui| {
+                    ui.label("Loading... Please wait.");
+                    ui.spinner();
+                });
+            }
+
+            if self.view_splats.len() > 1 {
+                self.dirty = true;
+
+                if !self.is_loading {
+                    let label = if self.paused {
+                        "⏸ paused"
+                    } else {
+                        "⏵ playing"
+                    };
+
+                    if ui.selectable_label(!self.paused, label).clicked() {
+                        self.paused = !self.paused;
+                    }
+
+                    if !self.paused {
+                        self.frame += delta_time.as_secs_f32();
+                        self.dirty = true;
+                    }
+                }
+            }
             if self.is_training {
                 ui.add_space(15.0);
 
@@ -184,13 +221,18 @@ impl ViewerPanel for ScenePanel {
         "Scene".to_owned()
     }
 
-    fn on_message(&mut self, message: ViewerMessage, _: &mut ViewerContext) {
-        match message.clone() {
+    fn on_message(&mut self, message: &ViewerMessage, context: &mut ViewerContext) {
+        if self.live_update {
+            self.dirty = true;
+        }
+
+        match message {
             ViewerMessage::NewSource => {
-                self.last_message = None;
+                self.view_splats = vec![];
                 self.paused = false;
                 self.is_loading = false;
                 self.is_training = false;
+                self.err = None;
             }
             ViewerMessage::DoneLoading { training: _ } => {
                 self.is_loading = false;
@@ -199,27 +241,51 @@ impl ViewerPanel for ScenePanel {
                 training,
                 filename: _,
             } => {
-                self.is_training = training;
-                self.last_message = None;
+                self.is_training = *training;
                 self.is_loading = true;
             }
-            ViewerMessage::Splats { iter: _, splats: _ } => {
+            ViewerMessage::ViewSplats {
+                up_axis,
+                splats,
+                frame,
+            } => {
+                context.set_up_axis(*up_axis);
+
                 if self.live_update {
-                    self.dirty = true;
-                    self.last_message = Some(message);
+                    self.view_splats.truncate(*frame);
+                    log::info!("Received splat at {frame}");
+                    self.view_splats.push(*splats.clone());
+                    self.frame = *frame as f32 - 0.5;
                 }
             }
-            ViewerMessage::Error(_) => {
-                self.last_message = Some(message);
+            ViewerMessage::TrainStep {
+                splats,
+                stats: _,
+                iter: _,
+                timestamp: _,
+            } => {
+                if self.live_update {
+                    self.view_splats = vec![*splats.clone()];
+                }
+            }
+            ViewerMessage::Error(e) => {
+                self.err = Some(e.clone());
             }
             _ => {}
         }
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, context: &mut ViewerContext) {
+        let cur_time = Instant::now();
+        let delta_time = self
+            .last_draw
+            .map(|last| cur_time - last)
+            .unwrap_or(Duration::from_millis(10));
+
+        self.last_draw = Some(cur_time);
+
         // Empty scene, nothing to show.
-        if !self.is_loading && context.dataset.train.views.is_empty() && self.last_message.is_none()
-        {
+        if !self.is_loading && self.view_splats.is_empty() && self.err.is_none() {
             ui.heading("Load a ply file or dataset to get started.");
             ui.add_space(5.0);
             ui.label(
@@ -227,7 +293,7 @@ impl ViewerPanel for ScenePanel {
 Load a pretrained .ply file to view it
 
 Or load a dataset to train on. These are zip files with:
-    - a transform_train.json and images, like the synthetic NeRF dataset format.
+    - a transforms.json and images, like the nerfstudio dataset format.
     - COLMAP data, containing the `images` & `sparse` folder."#,
             );
 
@@ -249,55 +315,46 @@ For bigger training runs consider using the native app."#,
             return;
         }
 
-        if self.last_cam_trans
-            != glam::Affine3A::from_rotation_translation(
-                context.camera.rotation,
-                context.camera.position,
-            )
-            || context.controls.is_animating()
-        {
-            self.dirty = true;
+        if let Some(err) = self.err.as_ref() {
+            ui.label("Error: ".to_owned() + &err.to_string());
+        } else if !self.view_splats.is_empty() {
+            const FPS: usize = 24;
+            let frame = ((self.frame * FPS as f32).floor() as usize) % self.view_splats.len();
+            let splats = self.view_splats[frame].clone();
+
+            let mut size = ui.available_size();
+            // Always keep some margin at the bottom
+            size.y -= 50.0;
+
+            if self.is_training {
+                let focal = context.camera.focal(glam::uvec2(1, 1));
+                let aspect_ratio = focal.y / focal.x;
+                if size.x / size.y > aspect_ratio {
+                    size.x = size.y * aspect_ratio;
+                } else {
+                    size.y = size.x / aspect_ratio;
+                }
+            } else {
+                let focal_y = fov_to_focal(context.camera.fov_y, size.y as u32) as f32;
+                context.camera.fov_x = focal_to_fov(focal_y as f64, size.x as u32);
+            }
+
+            let size = glam::uvec2(size.x.round() as u32, size.y.round() as u32);
+            let rect = context.controls.handle_user_input(ui, size, delta_time);
+
+            let total_transform = context.model_transform * context.controls.transform;
+            context.camera.position = total_transform.translation.into();
+            context.camera.rotation = glam::Quat::from_mat3a(&total_transform.matrix3);
+    
+            context.controls.dirty = false;
+    
+            self.dirty |= self.last_size != size;
+            self.draw_splats(ui, context, rect, &splats);
+            self.show_splat_options(ui, context, &splats, delta_time);
         }
 
-        if let Some(message) = self.last_message.clone() {
-            match message {
-                ViewerMessage::Error(e) => {
-                    ui.label("Error: ".to_owned() + &e.to_string());
-                }
-                ViewerMessage::Splats { iter: _, splats } => {
-                    let mut size = ui.available_size();
-                    let focal = context.camera.focal(glam::uvec2(1, 1));
-                    let aspect_ratio = focal.y / focal.x;
-                    if size.x / size.y > aspect_ratio {
-                        size.x = size.y * aspect_ratio;
-                    } else {
-                        size.y = size.x / aspect_ratio;
-                    }
-
-                    let cur_time = Instant::now();
-
-                    if let Some(last_draw) = self.last_draw {
-                        let delta_time = cur_time - last_draw;
-                        let size = glam::uvec2(size.x.round() as u32, size.y.round() as u32);
-                        let rect = context.controls.handle_user_input(
-                            ui,
-                            size,
-                            &mut context.camera,
-                            delta_time,
-                        );
-                        self.draw_splats(ui, context, rect, &splats);
-
-                        self.show_splat_options(ui, context, &splats);
-                    }
-                    self.last_draw = Some(cur_time);
-                    
-                    // Also redraw next frame, need to check if we're still animating.
-                    if self.dirty {
-                        ui.ctx().request_repaint();
-                    }
-                }
-                _ => {}
-            }
+        if self.dirty {
+            ui.ctx().request_repaint();
         }
     }
 }

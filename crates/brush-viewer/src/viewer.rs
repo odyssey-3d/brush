@@ -15,7 +15,7 @@ use burn::backend::Autodiff;
 use burn_wgpu::{Wgpu, WgpuDevice};
 use eframe::egui;
 use egui_tiles::{Container, Tile, TileId, Tiles};
-use glam::{Quat, Vec3};
+use glam::{Affine3A, Quat, Vec3, Vec3A};
 use tokio_with_wasm::alias as tokio;
 
 use ::tokio::io::AsyncReadExt;
@@ -54,9 +54,11 @@ pub(crate) enum ViewerMessage {
     /// Loaded a splat from a ply file.
     ///
     /// Nb: This includes all the intermediately loaded splats.
-    Splats {
-        iter: u32,
+    /// Nb: Animated splats will have the 'frame' number set.
+    ViewSplats {
+        up_axis: Vec3,
         splats: Box<Splats<Backend>>,
+        frame: usize,
     },
     /// Loaded a bunch of viewpoints to train on.
     Dataset {
@@ -68,6 +70,7 @@ pub(crate) enum ViewerMessage {
     },
     /// Some number of training steps are done.
     TrainStep {
+        splats: Box<Splats<Backend>>,
         stats: Box<TrainStepStats<Autodiff<Backend>>>,
         iter: u32,
         timestamp: Instant,
@@ -98,6 +101,9 @@ pub(crate) struct ViewerContext {
 
     pub open_panels: BTreeSet<String>,
     pub filename: Option<String>,
+
+    pub model_transform: glam::Affine3A,
+
     device: WgpuDevice,
     ctx: egui::Context,
 
@@ -131,24 +137,30 @@ fn process_loading_loop(
                     filename,
                 })
                 .await;
-            let splat_stream = splat_import::load_splat_from_ply(data, device.clone());
+
+            let subsample = None; // Subsampling a trained ply doesn't really make sense.
+            let splat_stream = splat_import::load_splat_from_ply(data, subsample, device.clone());
 
             let mut splat_stream = std::pin::pin!(splat_stream);
-            while let Some(splats) = splat_stream.next().await {
+
+            while let Some(message) = splat_stream.next().await {
+                let message = message?;
                 emitter
-                    .emit(ViewerMessage::Splats {
-                        iter: 0, // For viewing just use "training step 0", bit weird.
-                        splats: Box::new(splats?),
+                    .emit(ViewerMessage::ViewSplats {
+                        up_axis: message.meta.up_axis,
+                        splats: Box::new(message.splats),
+                        frame: message.meta.current_frame,
                     })
                     .await;
             }
+
             emitter
-                .emit(ViewerMessage::DoneLoading { training: false })
+                .emit(ViewerMessage::DoneLoading { training: true })
                 .await;
         } else if peek.starts_with("<!DOCTYPE html>".as_bytes()) {
             anyhow::bail!("Failed to download data (are you trying to download from Google Drive? You might have to use the proxy.")
         } else {
-            anyhow::bail!("Only .ply files are supported for viewing.")
+            anyhow::bail!("only zip and ply files are supported.");
         }
 
         Ok(())
@@ -187,19 +199,25 @@ fn process_loop(
                     filename,
                 })
                 .await;
-            let splat_stream = splat_import::load_splat_from_ply(data, device.clone());
+
+            let subsample = None; // Subsampling a trained ply doesn't really make sense.
+            let splat_stream = splat_import::load_splat_from_ply(data, subsample, device.clone());
 
             let mut splat_stream = std::pin::pin!(splat_stream);
-            while let Some(splats) = splat_stream.next().await {
+
+            while let Some(message) = splat_stream.next().await {
+                let message = message?;
                 emitter
-                    .emit(ViewerMessage::Splats {
-                        iter: 0, // For viewing just use "training step 0", bit weird.
-                        splats: Box::new(splats?),
+                    .emit(ViewerMessage::ViewSplats {
+                        up_axis: message.meta.up_axis,
+                        splats: Box::new(message.splats),
+                        frame: message.meta.current_frame,
                     })
                     .await;
             }
+
             emitter
-                .emit(ViewerMessage::DoneLoading { training: false })
+                .emit(ViewerMessage::DoneLoading { training: true })
                 .await;
         } else if peek.starts_with("PK".as_bytes()) {
             log::info!("Attempting to load data as .zip data");
@@ -207,7 +225,7 @@ fn process_loop(
             let _ = emitter
                 .emit(ViewerMessage::StartLoading {
                     training: true,
-                    filename,
+                    filename: filename,
                 })
                 .await;
 
@@ -223,9 +241,6 @@ fn process_loop(
             while let Some(message) = stream.next().await {
                 emitter.emit(message?).await;
             }
-            emitter
-                .emit(ViewerMessage::DoneLoading { training: true })
-                .await;
         } else if peek.starts_with("<!DOCTYPE html>".as_bytes()) {
             anyhow::bail!("Failed to download data (are you trying to download from Google Drive? You might have to use the proxy.")
         } else {
@@ -243,7 +258,6 @@ pub enum DataSource {
     PickFile,
     Url(String),
 }
-
 #[cfg(target_family = "wasm")]
 type DataRead = Pin<Box<dyn AsyncRead>>;
 
@@ -255,8 +269,13 @@ impl DataSource {
         match self {
             DataSource::PickFile => {
                 let picked = rrfd::pick_file().await?;
-                let data = picked.read().await;
-                Ok((Box::pin(std::io::Cursor::new(data)), picked.file_name()))
+                match picked {
+                    rrfd::FileHandle::Rfd(file_handle) => {
+                        let filename = file_handle.file_name();
+                        let data = file_handle.read().await;
+                        Ok((Box::pin(std::io::Cursor::new(data)), filename))
+                    }
+                }
             }
             DataSource::Url(url) => {
                 let mut url = url.to_owned();
@@ -273,16 +292,20 @@ impl DataSource {
 }
 
 impl ViewerContext {
-    fn new(device: WgpuDevice, ctx: egui::Context) -> Self {
+    fn new(device: WgpuDevice, ctx: egui::Context, up_axis: Vec3) -> Self {
+        let rotation = Quat::from_rotation_arc(Vec3::Y, up_axis);
+
+        let model_transform =
+            glam::Affine3A::from_rotation_translation(rotation, Vec3::ZERO).inverse();
+        let controls = CameraController::new(glam::Affine3A::from_translation(-Vec3::Z * 10.0));
+
+        // Camera position will be controller by controls.
+        let camera = Camera::new(Vec3::ZERO, Quat::IDENTITY, 0.35, 0.35, glam::vec2(0.5, 0.5));
+
         Self {
-            camera: Camera::new(
-                -Vec3::Z * 5.0,
-                Quat::IDENTITY,
-                0.5,
-                0.5,
-                glam::vec2(0.5, 0.5),
-            ),
-            controls: CameraController::new(),
+            camera,
+            controls,
+            model_transform,
             device,
             ctx,
             dataset: Dataset::empty(),
@@ -296,13 +319,25 @@ impl ViewerContext {
         }
     }
 
+    pub fn set_up_axis(&mut self, up_axis: Vec3) {
+        let rotation = Quat::from_rotation_arc(Vec3::Y, up_axis);
+        let model_transform =
+            glam::Affine3A::from_rotation_translation(rotation, Vec3::ZERO).inverse();
+        self.model_transform = model_transform;
+    }
+
     pub fn focus_view(&mut self, cam: &Camera) {
-        self.camera = cam.clone();
-        self.controls.focus = self.camera.position
-            + self.camera.rotation
-                * glam::Vec3::Z
+        // set the controls transform.
+        let cam_transform = Affine3A::from_rotation_translation(cam.rotation, cam.position);
+        self.controls.transform = self.model_transform.inverse() * cam_transform;
+        // Copy the camera, mostly to copy over the intrinsics and such.
+        self.controls.focus = self.controls.transform.translation
+            + self.controls.transform.matrix3
+                * Vec3A::Z
                 * self.dataset.train.bounds(0.0, 0.0).extent.length()
                 * 0.5;
+        self.controls.dirty = true;
+        self.camera = cam.clone();
     }
 
     pub(crate) fn start_ply_load(&mut self, source: DataSource) {
@@ -323,7 +358,10 @@ impl ViewerContext {
             // Map errors to a viewer message containing thee error.
             let mut stream = process_loading_loop(source, device).map(|m| match m {
                 Ok(m) => m,
-                Err(e) => ViewerMessage::Error(Arc::new(e)),
+                Err(e) => {
+                    println!("Err: {:?}", e);
+                    ViewerMessage::Error(Arc::new(e))
+                }
             });
 
             // Loop until there are no more messages, processing is done.
@@ -415,10 +453,13 @@ impl ViewerContext {
 
 impl Viewer {
     pub fn new(cc: &eframe::CreationContext) -> Self {
-        let state = cc.wgpu_render_state.as_ref().unwrap();
-
         // For now just assume we're running on the default
-        let device = WgpuDevice::DefaultDevice;
+        let state = cc.wgpu_render_state.as_ref().unwrap();
+        let device = brush_ui::create_wgpu_device(
+            state.adapter.clone(),
+            state.device.clone(),
+            state.queue.clone(),
+        );
 
         cfg_if::cfg_if! {
             if #[cfg(target_family = "wasm")] {
@@ -450,8 +491,8 @@ impl Viewer {
         }
 
         let mut tiles: Tiles<PaneType> = egui_tiles::Tiles::default();
-
-        let context = ViewerContext::new(device.clone(), cc.egui_ctx.clone());
+        let up_axis = Vec3::Y;
+        let context = ViewerContext::new(device.clone(), cc.egui_ctx.clone(), up_axis);
 
         let scene_pane = ScenePanel::new(
             state.queue.clone(),
@@ -578,7 +619,7 @@ impl eframe::App for Viewer {
                 for (_, pane) in self.tree.tiles.iter_mut() {
                     match pane {
                         Tile::Pane(pane) => {
-                            pane.on_message(message.clone(), &mut self.tree_ctx.context);
+                            pane.on_message(&message, &mut self.tree_ctx.context);
                         }
                         Tile::Container(_) => {}
                     }

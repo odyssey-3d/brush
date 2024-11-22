@@ -1,11 +1,13 @@
 use std::{future::Future, sync::Arc};
 
-use super::{DataStream, DatasetZip, LoadDatasetArgs, LoadInitArgs};
-use crate::{stream_fut_parallel, Dataset};
+use super::{DataStream, DatasetZip, LoadDatasetArgs};
+use crate::{splat_import::SplatMessage, stream_fut_parallel, Dataset};
 use anyhow::{Context, Result};
+use async_fn_stream::try_fn_stream;
 use brush_render::{
     camera::{self, Camera},
     gaussian_splats::Splats,
+    render::rgb_to_sh,
     Backend,
 };
 use brush_train::scene::SceneView;
@@ -108,72 +110,107 @@ fn read_views(
     Ok(handles)
 }
 
-pub(crate) fn load_dataset(
-    archive: DatasetZip,
+pub(crate) fn load_dataset<B: Backend>(
+    mut archive: DatasetZip,
     load_args: &LoadDatasetArgs,
-) -> Result<DataStream<Dataset>> {
-    let handles = read_views(archive, load_args)?;
+    device: &B::Device,
+) -> Result<(DataStream<SplatMessage<B>>, DataStream<Dataset>)> {
+    let mut handles = read_views(archive.clone(), load_args)?;
+
+    if let Some(subsample) = load_args.subsample_frames {
+        handles = handles.into_iter().step_by(subsample as usize).collect();
+    }
 
     let mut train_views = vec![];
     let mut eval_views = vec![];
 
     let load_args = load_args.clone();
+    let device = device.clone();
+
     let mut i = 0;
     let stream = stream_fut_parallel(handles).map(move |view| {
-        // I cannot wait for let chains.
-        if let Some(eval_period) = load_args.eval_split_every {
-            if i % eval_period == 0 {
-                eval_views.push(view?);
+        if let Ok(view) = view {
+            // I cannot wait for let chains.
+            if let Some(eval_period) = load_args.eval_split_every {
+                if i % eval_period == 0 {
+                    log::info!("Adding split eval view");
+                    eval_views.push(view);
+                } else {
+                    train_views.push(view);
+                }
             } else {
-                train_views.push(view?);
+                train_views.push(view);
             }
-        } else {
-            train_views.push(view?);
         }
 
         i += 1;
         Ok(Dataset::from_views(train_views.clone(), eval_views.clone()))
     });
 
-    Ok(Box::pin(stream))
-}
+    let init_stream = try_fn_stream(|emitter| async move {
+        let (is_binary, base_path) =
+            if let Some(path) = archive.find_base_path("sparse/0/cameras.bin") {
+                (true, path)
+            } else if let Some(path) = archive.find_base_path("sparse/0/cameras.txt") {
+                (false, path)
+            } else {
+                anyhow::bail!("No COLMAP data found (either text or binary.")
+            };
 
-pub(crate) fn load_initial_splat<B: Backend>(
-    mut archive: DatasetZip,
-    device: &B::Device,
-    load_args: &LoadInitArgs,
-) -> Result<Splats<B>> {
-    let (is_binary, base_path) = if let Some(path) = archive.find_base_path("sparse/0/cameras.bin")
-    {
-        (true, path)
-    } else if let Some(path) = archive.find_base_path("sparse/0/cameras.txt") {
-        (false, path)
-    } else {
-        anyhow::bail!("No COLMAP data found (either text or binary.")
-    };
+        let points_path = if is_binary {
+            base_path.join("sparse/0/points3D.bin")
+        } else {
+            base_path.join("sparse/0/points3D.txt")
+        };
 
-    let points_path = if is_binary {
-        base_path.join("sparse/0/points3D.bin")
-    } else {
-        base_path.join("sparse/0/points3D.txt")
-    };
+        // Extract COLMAP sfm points.
+        let points_data = {
+            let mut points_file = archive.file_at_path(&points_path)?;
+            colmap_reader::read_points3d(&mut points_file, is_binary)
+        };
 
-    // Extract COLMAP sfm points.
-    let points_data = {
-        let mut points_file = archive.file_at_path(&points_path)?;
-        colmap_reader::read_points3d(&mut points_file, is_binary)?
-    };
+        // Ignore empty points data.
+        if let Ok(points_data) = points_data {
+            if !points_data.is_empty() {
+                log::info!("Starting from colmap points {}", points_data.len());
 
-    let positions = points_data.values().map(|p| p.xyz).collect();
-    let colors = points_data
-        .values()
-        .map(|p| Vec3::new(p.rgb[0] as f32, p.rgb[1] as f32, p.rgb[2] as f32) / 255.0)
-        .collect();
+                let mut positions: Vec<Vec3> = points_data.values().map(|p| p.xyz).collect();
+                let mut colors: Vec<f32> = points_data
+                    .values()
+                    .flat_map(|p| {
+                        [
+                            rgb_to_sh(p.rgb[0] as f32 / 255.0),
+                            rgb_to_sh(p.rgb[1] as f32 / 255.0),
+                            rgb_to_sh(p.rgb[2] as f32 / 255.0),
+                        ]
+                    })
+                    .collect();
 
-    Ok(Splats::from_point_cloud(
-        positions,
-        colors,
-        load_args.sh_degree,
-        device,
-    ))
+                // Other dataloaders handle subsampling in the ply import. Here just
+                // do it manually, maybe nice to unify at some point.
+                if let Some(subsample) = load_args.subsample_points {
+                    positions = positions.into_iter().step_by(subsample as usize).collect();
+                    colors = colors.into_iter().step_by(subsample as usize * 3).collect();
+                }
+
+                let init_splat =
+                    Splats::from_raw(positions, None, None, Some(colors), None, &device);
+                emitter
+                    .emit(SplatMessage {
+                        meta: crate::splat_import::SplatMetadata {
+                            up_axis: Vec3::Y,
+                            total_splats: init_splat.num_splats(),
+                            frame_count: 1,
+                            current_frame: 0,
+                        },
+                        splats: init_splat,
+                    })
+                    .await;
+            }
+        }
+
+        Ok(())
+    });
+
+    Ok((Box::pin(init_stream), Box::pin(stream)))
 }

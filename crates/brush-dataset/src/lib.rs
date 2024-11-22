@@ -4,7 +4,7 @@ pub mod splat_export;
 pub mod splat_import;
 pub mod zip;
 
-pub use formats::{load_dataset, load_initial_splat};
+pub use formats::load_dataset;
 
 use anyhow::Result;
 use async_fn_stream::fn_stream;
@@ -22,6 +22,8 @@ pub struct LoadDatasetArgs {
     pub max_frames: Option<usize>,
     pub max_resolution: Option<u32>,
     pub eval_split_every: Option<usize>,
+    pub subsample_frames: Option<u32>,
+    pub subsample_points: Option<u32>,
 }
 
 #[derive(Clone)]
@@ -87,6 +89,8 @@ pub(crate) fn stream_fut_parallel<T: Send + 'static>(
             .unwrap_or(NonZero::new(8).unwrap())
             .get()
     };
+
+    log::info!("Loading steam with {parallel} threads");
 
     let mut futures = futures;
     fn_stream(|emitter| async move {

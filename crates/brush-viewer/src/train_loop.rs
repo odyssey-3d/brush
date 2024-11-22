@@ -20,6 +20,8 @@ use web_time::Instant;
 
 use crate::viewer::ViewerMessage;
 
+const UPDATE_EVERY: u32 = 5;
+
 #[derive(Debug, Clone)]
 pub enum TrainMessage {
     Paused(bool),
@@ -49,23 +51,25 @@ pub(crate) fn train_loop<T: AsyncRead + Unpin + 'static>(
 
         // Load initial splats if included
         let mut initial_splats = None;
-        let mut splat_stream =
-            brush_dataset::load_initial_splat(zip_data.clone(), &device, &load_init_args);
-
-        if let Some(splat_stream) = splat_stream.as_mut() {
-            while let Some(splats) = splat_stream.next().await {
-                let splats = splats?;
-                let msg = ViewerMessage::Splats {
-                    iter: 0,
-                    splats: Box::new(splats.valid()),
-                };
-                emitter.emit(msg).await;
-                initial_splats = Some(splats);
-            }
-        }
 
         let mut dataset = Dataset::empty();
-        let mut data_stream = brush_dataset::load_dataset(zip_data.clone(), &load_data_args)?;
+        let (mut splat_stream, mut data_stream) =
+            brush_dataset::load_dataset(zip_data.clone(), &load_data_args, &device)?;
+
+        // Read initial splats if any.
+        while let Some(message) = splat_stream.next().await {
+            let message = message?;
+            let splats = message.splats.with_min_sh_degree(load_init_args.sh_degree);
+            let msg = ViewerMessage::ViewSplats {
+                up_axis: message.meta.up_axis,
+                splats: Box::new(splats.valid()),
+                frame: 0,
+            };
+            emitter.emit(msg).await;
+            initial_splats = Some(splats);
+        }
+
+        // Read dataset stream.
         while let Some(d) = data_stream.next().await {
             dataset = d?;
 
@@ -151,22 +155,16 @@ pub(crate) fn train_loop<T: AsyncRead + Unpin + 'static>(
                         .await?;
                     splats = new_splats;
 
-                    // Log out train stats.
-                    // HACK: Always emit events that do a refine,
-                    // as stats might want to log them.
-                    emitter
-                        .emit(ViewerMessage::Splats {
-                            iter: trainer.iter,
-                            splats: Box::new(splats.valid()),
-                        })
-                        .await;
-                    emitter
-                        .emit(ViewerMessage::TrainStep {
-                            stats: Box::new(stats),
-                            iter: trainer.iter,
-                            timestamp: Instant::now(),
-                        })
-                        .await;
+                    if trainer.iter % UPDATE_EVERY == 0 {
+                        emitter
+                            .emit(ViewerMessage::TrainStep {
+                                splats: Box::new(splats.valid()),
+                                stats: Box::new(stats),
+                                iter: trainer.iter,
+                                timestamp: Instant::now(),
+                            })
+                            .await;
+                    }
                 }
             }
 

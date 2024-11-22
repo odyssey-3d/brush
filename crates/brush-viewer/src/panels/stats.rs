@@ -5,7 +5,7 @@ use crate::{
 };
 use burn_jit::cubecl::Runtime;
 use burn_wgpu::{WgpuDevice, WgpuRuntime};
-use std::{collections::VecDeque, sync::Arc};
+use std::{sync::Arc, time::Duration};
 use web_time::Instant;
 use wgpu::AdapterInfo;
 
@@ -14,13 +14,14 @@ pub(crate) struct StatsPanel {
 
     last_train_step: (Instant, u32),
     train_iter_per_s: f32,
-    train_iter_history: VecDeque<f32>,
     last_eval_psnr: Option<f32>,
 
     training_started: bool,
     is_loading: bool,
     num_splats: usize,
+    frames: usize,
 
+    start_load_time: Instant,
     adapter_info: AdapterInfo,
 }
 
@@ -31,11 +32,12 @@ impl StatsPanel {
             device,
             last_train_step: (Instant::now(), 0),
             train_iter_per_s: 0.0,
-            train_iter_history: VecDeque::with_capacity(5),
             last_eval_psnr: None,
             training_started: false,
             is_loading: false,
             num_splats: 0,
+            frames: 0,
+            start_load_time: Instant::now(),
             adapter_info,
         }
     }
@@ -66,40 +68,41 @@ impl ViewerPanel for StatsPanel {
         panel_title(&PanelTypes::Stats).to_owned()
     }
 
-    fn on_message(&mut self, message: crate::viewer::ViewerMessage, _: &mut ViewerContext) {
+    fn on_message(&mut self, message: &ViewerMessage, _: &mut ViewerContext) {
         match message {
             ViewerMessage::StartLoading {
                 training,
                 filename: _,
             } => {
+                self.start_load_time = Instant::now();
                 self.last_train_step = (Instant::now(), 0);
                 self.train_iter_per_s = 0.0;
-                self.train_iter_history.clear();
                 self.num_splats = 0;
                 self.last_eval_psnr = None;
-                self.training_started = training;
                 self.is_loading = true;
+                self.training_started = *training;
+            }
+            ViewerMessage::ViewSplats {
+                up_axis: _,
+                splats,
+                frame,
+            } => {
+                self.num_splats = splats.num_splats();
+                self.frames = *frame;
             }
             ViewerMessage::TrainStep {
+                splats,
                 stats: _,
                 iter,
                 timestamp,
             } => {
-                let current_iter_per_s = (iter - self.last_train_step.1) as f32
-                    / (timestamp - self.last_train_step.0).as_secs_f32();
-
-                self.train_iter_history.push_back(current_iter_per_s);
-                if self.train_iter_history.len() > 25 {
-                    self.train_iter_history.pop_front();
-                }
-
-                self.train_iter_per_s = self.train_iter_history.iter().sum::<f32>()
-                    / self.train_iter_history.len() as f32;
-
-                self.last_train_step = (timestamp, iter);
-            }
-            ViewerMessage::Splats { iter: _, splats } => {
                 self.num_splats = splats.num_splats();
+
+                let current_iter_per_s = (iter - self.last_train_step.1) as f32
+                    / (*timestamp - self.last_train_step.0).as_secs_f32();
+
+                self.train_iter_per_s = 0.95 * self.train_iter_per_s + 0.05 * current_iter_per_s;
+                self.last_train_step = (*timestamp, *iter);
             }
             ViewerMessage::EvalResult { iter: _, eval } => {
                 let avg_psnr =
@@ -132,8 +135,11 @@ impl ViewerPanel for StatsPanel {
                 ));
                 ui.end_row();
 
-                ui.separator();
-                ui.end_row();
+                if self.frames > 0 {
+                    ui.label("Frames");
+                    ui.label(format!("{}", self.frames));
+                    ui.end_row();
+                }
 
                 if self.training_started {
                     ui.label("Train step");
@@ -152,6 +158,12 @@ impl ViewerPanel for StatsPanel {
                     });
                     ui.end_row();
                     ui.separator();
+
+                    ui.label("Training time");
+                    // Round duration to seconds.
+                    let elapsed =
+                        Duration::from_secs((Instant::now() - self.start_load_time).as_secs());
+                    ui.label(format!("{}", humantime::Duration::from(elapsed)));
                     ui.end_row();
                 }
 

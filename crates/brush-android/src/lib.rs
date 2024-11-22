@@ -1,7 +1,9 @@
 #![cfg(target_os = "android")]
+
 use jni::sys::{jint, JNI_VERSION_1_6};
 use std::os::raw::c_void;
 use std::sync::Arc;
+use tokio_with_wasm::alias as tokio;
 
 #[allow(non_snake_case)]
 #[no_mangle]
@@ -15,22 +17,37 @@ pub extern "system" fn JNI_OnLoad(vm: jni::JavaVM, _: *mut c_void) -> jint {
 fn android_main(app: winit::platform::android::activity::AndroidApp) {
     use winit::platform::android::EventLoopBuilderExtAndroid;
 
-    let wgpu_options = brush_viewer::wgpu_config::get_config();
+    let wgpu_options = brush_ui::create_egui_options();
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap();
 
-    android_logger::init_once(
-        android_logger::Config::default().with_max_level(log::LevelFilter::Info),
-    );
-
-    eframe::run_native(
-        "Brush",
-        eframe::NativeOptions {
-            event_loop_builder: Some(Box::new(|builder| {
-                builder.with_android_app(app);
-            })),
-            wgpu_options,
-            ..Default::default()
-        },
-        Box::new(|cc| Ok(Box::new(brush_viewer::viewer::Viewer::new(cc)))),
+    // NB: Load carrying icon. egui at head fails when no icon is included
+    // as the built-in one is git-lfs which cargo doesn't clone properly.
+    let icon = eframe::icon_data::from_png_bytes(
+        &include_bytes!("../../brush-desktop/assets/icon-256.png")[..],
     )
     .unwrap();
+
+    runtime.block_on(async {
+        android_logger::init_once(
+            android_logger::Config::default().with_max_level(log::LevelFilter::Info),
+        );
+
+        eframe::run_native(
+            "Brush",
+            eframe::NativeOptions {
+                // Build app display.
+                viewport: egui::ViewportBuilder::default().with_icon(std::sync::Arc::new(icon)),
+                event_loop_builder: Some(Box::new(|builder| {
+                    builder.with_android_app(app);
+                })),
+                wgpu_options,
+                ..Default::default()
+            },
+            Box::new(|cc| Ok(Box::new(brush_viewer::viewer::Viewer::new(cc)))),
+        )
+        .unwrap();
+    });
 }
