@@ -1,5 +1,5 @@
 use super::{panel_title, PanelTypes};
-use crate::{ viewer::ViewerContext, ViewerPanel};
+use crate::{viewer::ViewerContext, ViewerPanel};
 
 use std::format;
 
@@ -33,7 +33,6 @@ fn show_open_panel_options(
     }
 }
 
-
 impl ViewerPanel for ViewerOptionsPanel {
     fn title(&self) -> String {
         panel_title(&PanelTypes::ViewOptions).to_owned()
@@ -49,8 +48,7 @@ impl ViewerPanel for ViewerOptionsPanel {
                         let mut panels_to_check =
                             vec![PanelTypes::TrainingOptions, PanelTypes::Presets];
 
-                        #[cfg(not(target_family = "wasm"))]
-                        {
+                        if !cfg!(target_family = "wasm") {
                             panels_to_check.push(PanelTypes::Rerun);
                         }
 
