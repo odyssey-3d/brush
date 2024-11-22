@@ -112,10 +112,9 @@ pub(crate) fn neohookean_energy<B: Backend>(
     let one = Tensor::full_like(&j, 1.0);
     let c1 = mu.clone() * 0.5;
     let d1 = lambda * 0.5;
+    let j_minus_1 = j.clone() - one.clone();
 
-    let w = c1 * (i2 - three) + d1 * (j.clone() - one.clone()) * (j.clone() - one.clone())
-        - mu * (j - one);
-
+    let w = c1 * (i2 - three) + d1 * j_minus_1.clone() * j_minus_1.clone() - mu * j_minus_1;
     w
 }
 

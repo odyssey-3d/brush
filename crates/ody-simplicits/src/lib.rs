@@ -3,5 +3,6 @@ pub mod model;
 pub mod utils;
 
 pub(crate) mod materials;
-pub(crate) mod physics;
+pub mod physics;
 pub(crate) mod sampling;
+pub(crate) mod skinning;

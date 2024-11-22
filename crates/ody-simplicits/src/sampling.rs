@@ -1,4 +1,7 @@
-use burn::prelude::*;
+use burn::{
+    prelude::Backend,
+    tensor::{Tensor, Int},
+};
 
 fn random_sample_indices<B: Backend>(
     num_samples: usize,

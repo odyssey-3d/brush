@@ -1,11 +1,8 @@
-use burn::prelude::*;
+use burn::prelude::{Backend, Tensor};
 
 pub fn calculate_determinant<B: Backend>(tensor: Tensor<B, 3>) -> Tensor<B, 3> {
     let tensor = tensor.reshape([-1, 1, 9]).squeeze::<2>(1);
-    let batch = tensor.shape().dims[0];
-    let a = (0..9)
-        .map(|i| tensor.clone().slice([0..batch, i..i + 1]))
-        .collect::<Vec<_>>();
+    let a = tensor.iter_dim(1).map(|x| x.clone()).collect::<Vec<_>>();
 
     let det = a[0].clone() * (a[4].clone() * a[8].clone() - a[5].clone() * a[7].clone())   // col0
       - a[1].clone() * (a[3].clone() * a[8].clone() - a[5].clone() * a[6].clone())
@@ -35,9 +32,7 @@ pub fn calculate_inverse<B: Backend>(tensor: Tensor<B, 3>) -> Tensor<B, 3> {
     let tensor = tensor.reshape([-1, 1, 9]).squeeze::<2>(1);
     let batch = tensor.shape().dims[0];
 
-    let a = (0..9)
-        .map(|i| tensor.clone().slice([0..batch, i..i + 1]))
-        .collect::<Vec<_>>();
+    let a = tensor.iter_dim(1).map(|x| x.clone()).collect::<Vec<_>>();
 
     let adj = generate_2d_range(0, 3)
         .map(|(i, j)| {

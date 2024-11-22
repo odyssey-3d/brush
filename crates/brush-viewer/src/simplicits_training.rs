@@ -26,7 +26,7 @@ pub(crate) fn simplicits_training(
 
         let lr = 1e-3;
         let le_coeff = 1e-1;
-        let lo_coeff = 1e6;
+        let lo_coeff = 1e1;
         let num_batch = 8;
         let num_handles = 10;
         let num_samples = 16;
