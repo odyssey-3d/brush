@@ -127,7 +127,6 @@ fn process_loading_loop(
         let data = std::io::Cursor::new(peek).chain(data);
 
         log::info!("{:?}", String::from_utf8(peek.to_vec()));
-
         if peek.starts_with("ply".as_bytes()) {
             log::info!("Attempting to load data as .ply data");
 
@@ -155,7 +154,7 @@ fn process_loading_loop(
             }
 
             emitter
-                .emit(ViewerMessage::DoneLoading { training: true })
+                .emit(ViewerMessage::DoneLoading { training: false})
                 .await;
         } else if peek.starts_with("<!DOCTYPE html>".as_bytes()) {
             anyhow::bail!("Failed to download data (are you trying to download from Google Drive? You might have to use the proxy.")
@@ -195,7 +194,7 @@ fn process_loop(
 
             let _ = emitter
                 .emit(ViewerMessage::StartLoading {
-                    training: false,
+                    training: true,
                     filename,
                 })
                 .await;

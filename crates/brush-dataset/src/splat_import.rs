@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use async_fn_stream::try_fn_stream;
-use brush_render::{render::{rgb_to_sh, sh_coeffs_for_degree}, Backend};
+use brush_render::{render::rgb_to_sh, Backend};
 use burn::tensor::{Tensor, TensorData};
 use glam::{Quat, Vec3, Vec4};
 use ply_rs::{
@@ -249,32 +249,9 @@ pub fn load_splat_from_ply<T: AsyncRead + Unpin + 'static, B: Backend>(
                 }
 
                 for i in 0..element.count {
-                    let splat = match header.encoding {
-                        ply_rs::ply::Encoding::Ascii => {
-                            let mut line = String::new();
-                            reader.read_line(&mut line).await?;
-                            gaussian_parser.read_ascii_element(&line, element)?
-                        }
-                        ply_rs::ply::Encoding::BinaryBigEndian => {
-                            gaussian_parser
-                                .read_big_endian_element(&mut reader, element)
-                                .await?
-                        }
-                        ply_rs::ply::Encoding::BinaryLittleEndian => {
-                            gaussian_parser
-                                .read_little_endian_element(&mut reader, element)
-                                .await?
-                        }
-                    };
-
-                    let mut sh_coeffs_interleaved =
-                        interleave_coeffs(splat.sh_dc, &splat.sh_coeffs_rest);
-
-                    // Limit the number of imported SH channels for now.
-                    let max_sh_len = sh_coeffs_for_degree(4) as usize * 3;
-
-                    if sh_coeffs_interleaved.len() > max_sh_len {
-                        sh_coeffs_interleaved.truncate(max_sh_len);
+                    // Ocassionally yield.
+                    if i % 500 == 0 {
+                        tokio::task::yield_now().await;
                     }
 
                     // Occasionally send some updated splats.
