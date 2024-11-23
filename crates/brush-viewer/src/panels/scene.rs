@@ -326,6 +326,10 @@ For bigger training runs consider using the native app."#,
             // Always keep some margin at the bottom
             size.y -= 50.0;
 
+            if size.x < 8.0 || size.y < 8.0 {
+                return;
+            }
+    
             if self.is_training {
                 let focal = context.camera.focal(glam::uvec2(1, 1));
                 let aspect_ratio = focal.y / focal.x;
