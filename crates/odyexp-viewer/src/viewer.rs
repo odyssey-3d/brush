@@ -1,14 +1,18 @@
 use eframe::egui;
 
-use crate::app_context::{ViewerContext, ViewerMessage};
-use crate::load::DataSource;
-use crate::main_panel::MainPanel;
-use crate::top_panel::TopPanel;
+use crate::{
+    app_context::{ViewerContext, ViewerMessage},
+    load::DataSource,
+    main_panel::MainPanel,
+    toolbar::Toolbar,
+    top_panel::TopPanel,
+};
 
 pub struct Viewer {
     app_context: ViewerContext,
     main_panel: MainPanel,
     top_panel: TopPanel,
+    toolbar: Toolbar,
 }
 
 impl Viewer {
@@ -40,14 +44,6 @@ impl Viewer {
         let up_axis = glam::Vec3::Y;
         let mut context = ViewerContext::new(device.clone(), cc.egui_ctx.clone(), up_axis);
 
-        let main_panel = MainPanel::new(
-            state.queue.clone(),
-            state.device.clone(),
-            state.renderer.clone(),
-        );
-
-        let top_panel = TopPanel::new();
-
         let mut start_url = None;
         if cfg!(target_family = "wasm") {
             if let Some(window) = web_sys::window() {
@@ -59,14 +55,25 @@ impl Viewer {
                 }
             }
         }
+
         if let Some(start_url) = start_url {
             context.start_ply_load(DataSource::Url(start_url.to_owned()));
         }
+
+        let main_panel = MainPanel::new(
+            state.queue.clone(),
+            state.device.clone(),
+            state.renderer.clone(),
+        );
+
+        let top_panel = TopPanel::new();
+        let toolbar = Toolbar::new();
 
         Viewer {
             app_context: context,
             main_panel,
             top_panel,
+            toolbar,
         }
     }
 }
@@ -102,6 +109,7 @@ impl eframe::App for Viewer {
 
                 self.top_panel.on_message(&message, &mut self.app_context);
                 self.main_panel.on_message(&message, &mut self.app_context);
+                self.toolbar.on_message(&message, &mut self.app_context);
 
                 ctx.request_repaint();
             }
@@ -110,5 +118,6 @@ impl eframe::App for Viewer {
         egui_extras::install_image_loaders(ctx);
         self.top_panel.show(&mut self.app_context);
         self.main_panel.show(&mut self.app_context);
+        self.toolbar.show(&mut self.app_context);
     }
 }

@@ -63,7 +63,7 @@ fn main() {
                 .start(
                     canvas,
                     web_options,
-                    Box::new(|cc| Ok(Box::new(brush_viewer::viewer::Viewer::new(cc)))),
+                    Box::new(move |cc| Ok(Box::new(odyexp_viewer::viewer::Viewer::new(cc)))),
                 )
                 .await
                 .expect("failed to start eframe");

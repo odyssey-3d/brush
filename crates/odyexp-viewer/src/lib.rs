@@ -1,6 +1,7 @@
 mod main_panel;
 mod scene_panel;
 mod top_panel;
+mod toolbar;
 
 mod load;
 

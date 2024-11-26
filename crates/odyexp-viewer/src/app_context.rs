@@ -39,6 +39,19 @@ pub(crate) enum ViewerMessage {
     DoneLoading,
 }
 
+#[derive(Clone, Debug)]
+pub(crate) struct UILayout {
+    pub top_panel_height: f32,
+}
+
+impl UILayout {
+    pub fn default() -> Self {
+        Self {
+            top_panel_height: 65.0,
+        }
+    }
+}
+
 // TODO: Bit too much random shared state here.
 pub(crate) struct ViewerContext {
     pub model_transform: Affine3A,
@@ -54,6 +67,8 @@ pub(crate) struct ViewerContext {
     pub filename: Option<String>,
     pub view_splats: Vec<Splats<Wgpu>>,
     pub frame: f32,
+
+    pub ui_layout: UILayout,
 }
 
 impl ViewerContext {
@@ -76,6 +91,7 @@ impl ViewerContext {
             filename: None,
             view_splats: vec![],
             frame: 0.0,
+            ui_layout: UILayout::default(),
         }
     }
 

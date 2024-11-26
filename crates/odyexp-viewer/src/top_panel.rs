@@ -38,8 +38,11 @@ impl TopPanel {
     }
 
     pub fn show(&mut self, app_context: &mut ViewerContext) {
-        let panel_height = 55.0;
+        let panel_height = app_context.ui_layout.top_panel_height;
+
         let ctx = app_context.egui_ctx.clone();
+        let screen_rect = ctx.input(|i: &egui::InputState| i.screen_rect());
+
         egui::TopBottomPanel::top("wrap_app_top_bar")
             .default_height(panel_height)
             .frame(self.frame)
@@ -79,7 +82,7 @@ impl TopPanel {
                                 ui.heading("<No Scene loaded>");
                             }
 
-                            let right_side = ui.cursor().left();
+                            let right_side = screen_rect.width();
 
                             let margin = 5.0;
                             let offset = (panel_height - button_height) / 2.0;
@@ -94,6 +97,7 @@ impl TopPanel {
                                     egui::ImageButton::new(egui::Image::new(egui::include_image!(
                                         "../assets/back-arrow.png"
                                     )))
+                                    .frame(false)
                                     .rounding(egui::Rounding::same(margin)),
                                 )
                                 .clicked()
