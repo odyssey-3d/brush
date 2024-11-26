@@ -46,6 +46,73 @@ impl Toolbar {
 
         let button_size = egui::vec2(button_size, button_size);
 
+        // let window_rect = self.draw_edit_tools(
+        //     ctx,
+        //     position,
+        //     outer_margin,
+        //     margin,
+        //     button_size,
+        //     button_rounding,
+        //     toolbar_width,
+        // );
+
+        // let position = egui::pos2(position.x, window_rect.top());
+
+        self.draw_camera_tools(
+            ctx,
+            position,
+            outer_margin,
+            margin,
+            button_size,
+            button_rounding,
+            toolbar_width,
+        );
+    }
+
+    fn draw_camera_tools(
+        &mut self,
+        ctx: &egui::Context,
+        position: egui::Pos2,
+        outer_margin: egui::Vec2,
+        margin: f32,
+        button_size: egui::Vec2,
+        button_rounding: f32,
+        toolbar_width: f32,
+    ) {
+        self.tool_group(&ctx, position, |ui| {
+            let button_pos = egui::pos2(
+                position.x + outer_margin.x + margin,
+                position.y + outer_margin.y + margin,
+            );
+            if self
+                .tool_button(
+                    ui,
+                    egui::Image::new(egui::include_image!("../assets/camera.png")),
+                    button_pos,
+                    button_size,
+                    button_rounding,
+                    true,
+                )
+                .clicked()
+            {
+                println!("camera button clicked");
+            };
+
+            ui.allocate_space(egui::vec2(toolbar_width, outer_margin.y));
+            ui.cursor()
+        });
+    }
+    #[allow(dead_code)]
+    fn draw_edit_tools(
+        &mut self,
+        ctx: &egui::Context,
+        position: egui::Pos2,
+        outer_margin: egui::Vec2,
+        margin: f32,
+        button_size: egui::Vec2,
+        button_rounding: f32,
+        toolbar_width: f32,
+    ) -> egui::Rect {
         let window_rect = self.tool_group(&ctx, position, |ui| {
             let mut button_pos = egui::pos2(
                 position.x + outer_margin.x + margin,
@@ -80,31 +147,7 @@ impl Toolbar {
 
             ui.cursor()
         });
-
-        let position = egui::pos2(position.x, window_rect.top());
-
-        self.tool_group(&ctx, position, |ui| {
-            let button_pos = egui::pos2(
-                position.x + outer_margin.x + margin,
-                position.y + outer_margin.y + margin,
-            );
-            if self
-                .tool_button(
-                    ui,
-                    egui::Image::new(egui::include_image!("../assets/camera.png")),
-                    button_pos,
-                    button_size,
-                    button_rounding,
-                    true,
-                )
-                .clicked()
-            {
-                println!("camera button clicked");
-            };
-
-            ui.allocate_space(egui::vec2(toolbar_width, outer_margin.y));
-            ui.cursor()
-        });
+        window_rect
     }
 
     fn tool_group(
