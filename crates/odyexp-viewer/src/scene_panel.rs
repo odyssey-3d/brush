@@ -1,6 +1,5 @@
 use std::{sync::Arc, time::Duration};
 
-use anyhow::Error;
 use tracing::trace_span;
 
 use brush_render::{
@@ -15,10 +14,6 @@ use core::f32;
 use eframe::egui_wgpu::Renderer;
 use egui::epaint::mutex::RwLock as EguiRwLock;
 use egui::{Color32, Rect};
-
-use glam::{Quat, Vec2};
-
-use tokio_with_wasm::alias as tokio;
 
 use web_time::Instant;
 
@@ -65,7 +60,7 @@ impl ScenePanel {
         ui: &mut egui::Ui,
         context: &ViewerContext,
         rect: Rect,
-        splats: &Splats<Wgpu>,
+        splats: &Splats<Backend>,
     ) {
         // If this viewport is re-rendering.
         if ui.ctx().has_requested_repaint() && self.dirty {
@@ -157,7 +152,15 @@ impl ScenePanel {
         }
     }
 
-    pub(crate) fn show(&mut self, ui: &mut egui::Ui, context: &ViewerContext) {
+    pub(crate) fn show(&mut self, ui: &mut egui::Ui, context: &mut ViewerContext) {
+        let cur_time = Instant::now();
+        let delta_time = self
+            .last_draw
+            .map(|last| cur_time - last)
+            .unwrap_or(Duration::from_millis(10));
+
+        self.last_draw = Some(cur_time);
+
         // Empty scene, nothing to show.
         if !self.is_loading && context.view_splats.is_empty() && self.err.is_none() {
             return;
@@ -174,18 +177,23 @@ impl ScenePanel {
         if size.x < 8.0 || size.y < 8.0 {
             return;
         }
-        // let focal_y = fov_to_focal(context.camera.fov_y, size.y as u32) as f32;
-        // context.camera.fov_x = focal_to_fov(focal_y as f64, size.x as u32);
-        let size = glam::uvec2(size.x.round() as u32, size.y.round() as u32);
-        let (rect, response) = ui.allocate_exact_size(
-            egui::Vec2::new(size.x as f32, size.y as f32),
-            egui::Sense::drag(),
-        );
+        let focal_y = fov_to_focal(context.camera.fov_y, size.y as u32) as f32;
+        context.camera.fov_x = focal_to_fov(focal_y as f64, size.x as u32);
 
+        let size = glam::uvec2(size.x.round() as u32, size.y.round() as u32);
+        let rect = context.controls.handle_user_input(ui, size, delta_time);
+
+        let total_transform = context.model_transform * context.controls.transform;
+        context.camera.position = total_transform.translation.into();
+        context.camera.rotation = glam::Quat::from_mat3a(&total_transform.matrix3);
+
+        context.controls.dirty = false;
+
+        self.dirty |= self.last_size != size;
         const FPS: usize = 24;
         let frame = ((context.frame * FPS as f32).floor() as usize) % context.view_splats.len();
 
         self.draw_splats(ui, context, rect, &context.view_splats[frame]);
-        self.show_splat_options(ui, context, Duration::from_secs_f32(1.0 / 60.0));
+        self.show_splat_options(ui, context, delta_time);
     }
 }

@@ -7,19 +7,13 @@ use glam::{vec2, Affine3A, Quat, Vec3};
 
 use tokio_with_wasm::alias as tokio;
 
-use async_fn_stream::try_fn_stream;
-
-use eframe::egui;
-
-use ::tokio::io::AsyncReadExt;
-use ::tokio::sync::mpsc::error::TrySendError;
-use ::tokio::sync::mpsc::{Receiver, Sender};
-use ::tokio::{io::AsyncRead, io::BufReader, sync::mpsc::channel};
+use ::tokio::sync::mpsc::channel;
+use ::tokio::sync::mpsc::Receiver;
 use tokio::task;
 
+use crate::camera_controller::CameraController;
 use crate::load::{process_loading_loop, DataSource};
-use tokio_stream::{Stream, StreamExt};
-use web_time::Instant;
+use tokio_stream::StreamExt;
 
 type Backend = Wgpu;
 
@@ -53,6 +47,7 @@ pub(crate) struct ViewerContext {
     pub egui_ctx: egui::Context,
 
     pub camera: Camera,
+    pub controls: CameraController,
 
     pub receiver: Option<Receiver<ViewerMessage>>,
 
@@ -66,7 +61,7 @@ impl ViewerContext {
         let rotation = Quat::from_rotation_arc(Vec3::Y, up_axis);
 
         let model_transform = Affine3A::from_rotation_translation(rotation, Vec3::ZERO).inverse();
-        // let controls = OrbitControls::new(Affine3A::from_translation(-Vec3::Z * 10.0));
+        let controls = CameraController::new(Affine3A::from_translation(-Vec3::Z * 10.0));
 
         // Camera position will be controller by controls.
         let camera = Camera::new(-Vec3::Z * 10.0, Quat::IDENTITY, 0.35, 0.35, vec2(0.5, 0.5));
@@ -74,6 +69,7 @@ impl ViewerContext {
         Self {
             model_transform,
             camera,
+            controls,
             device,
             egui_ctx: ctx,
             receiver: None,

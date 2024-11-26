@@ -1,24 +1,15 @@
-use std::{pin::Pin, sync::Arc};
+use std::pin::Pin;
 
 use async_fn_stream::try_fn_stream;
 
 use brush_dataset::splat_import;
-use tokio_with_wasm::alias as tokio;
 
 use ::tokio::io::AsyncReadExt;
-use ::tokio::sync::mpsc::error::TrySendError;
-use ::tokio::sync::mpsc::{Receiver, Sender};
-use ::tokio::{io::AsyncRead, io::BufReader, sync::mpsc::channel};
-use tokio::task;
+use ::tokio::{io::AsyncRead, io::BufReader};
 
 use tokio_stream::{Stream, StreamExt};
 
-use burn_wgpu::{Wgpu, WgpuDevice};
-
-use eframe::egui;
-use egui::{Align, Layout};
-
-use glam::{Affine3A, Quat, Vec3, Vec3A};
+use burn_wgpu::WgpuDevice;
 
 use crate::app_context::ViewerMessage;
 

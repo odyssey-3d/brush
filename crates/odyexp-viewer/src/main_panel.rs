@@ -37,16 +37,11 @@ impl MainPanel {
         self.scene.on_message(message, context);
     }
 
-    pub fn show(&mut self, app_context: &ViewerContext) {
+    pub fn show(&mut self, app_context: &mut ViewerContext) {
+        let ctx = &app_context.egui_ctx.clone();
         egui::CentralPanel::default()
             .frame(self.frame)
-            .show(&app_context.egui_ctx, |ui| {
-                // Close when pressing escape (in a native viewer anyway).
-                if ui.input(|r| r.key_pressed(egui::Key::Escape)) {
-                    app_context
-                        .egui_ctx
-                        .send_viewport_cmd(egui::ViewportCommand::Close);
-                }
+            .show(ctx, |ui| {
                 self.scene.show(ui, app_context);
             });
     }

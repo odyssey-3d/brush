@@ -1,8 +1,7 @@
-use tokio_with_wasm::alias as tokio;
-
 use eframe::egui;
 
 use crate::app_context::{ViewerContext, ViewerMessage};
+use crate::load::DataSource;
 use crate::main_panel::MainPanel;
 use crate::top_panel::TopPanel;
 
@@ -14,7 +13,6 @@ pub struct Viewer {
 
 impl Viewer {
     pub fn new(cc: &eframe::CreationContext) -> Self {
-        // For now just assume we're running on the default
         let state = cc.wgpu_render_state.as_ref().unwrap();
         let device = brush_ui::create_wgpu_device(
             state.adapter.clone(),
@@ -39,21 +37,8 @@ impl Viewer {
             }
         }
 
-        // let mut start_url = None;
-        // if cfg!(target_family = "wasm") {
-        //     if let Some(window) = web_sys::window() {
-        //         if let Ok(search) = window.location().search() {
-        //             if let Ok(search_params) = web_sys::UrlSearchParams::new_with_str(&search) {
-        //                 let url = search_params.get("url");
-        //                 start_url = url;
-        //             }
-        //         }
-        //     }
-        // }
-
-        // let mut tiles: Tiles<PaneType> = egui_tiles::Tiles::default();
         let up_axis = glam::Vec3::Y;
-        let context = ViewerContext::new(device.clone(), cc.egui_ctx.clone(), up_axis);
+        let mut context = ViewerContext::new(device.clone(), cc.egui_ctx.clone(), up_axis);
 
         let main_panel = MainPanel::new(
             state.queue.clone(),
@@ -63,59 +48,25 @@ impl Viewer {
 
         let top_panel = TopPanel::new();
 
-        // let loading_subs = vec![
-        //     tiles.insert_pane(Box::new(LoadDataPanel::new())),
-        //     tiles.insert_pane(Box::new(PresetsPanel::new())),
-        // ];
-        // let loading_pane = tiles.insert_tab_tile(loading_subs);
-
-        // #[allow(unused_mut)]
-        // let mut sides = vec![
-        //     loading_pane,
-        //     tiles.insert_pane(Box::new(StatsPanel::new(
-        //         device.clone(),
-        //         state.adapter.clone(),
-        //     ))),
-        // ];
-
-        // #[cfg(not(target_family = "wasm"))]
-        // {
-        //     sides.push(tiles.insert_pane(Box::new(crate::panels::RerunPanel::new(device.clone()))));
-        // }
-
-        // if cfg!(feature = "tracing") {
-        //     sides.push(tiles.insert_pane(Box::new(TracingPanel::default())));
-        // }
-
-        // let side_panel = tiles.insert_vertical_tile(sides);
-        // let scene_pane_id = tiles.insert_pane(Box::new(scene_pane));
-
-        // let mut lin = egui_tiles::Linear::new(
-        //     egui_tiles::LinearDir::Horizontal,
-        //     vec![side_panel, scene_pane_id],
-        // );
-        // lin.shares.set_share(side_panel, 0.4);
-
-        // let root_container = tiles.insert_container(lin);
-        // let tree = egui_tiles::Tree::new("viewer_tree", root_container, tiles);
-
-        // let mut tree_ctx = ViewerTree { context };
-
-        // if let Some(start_url) = start_url {
-        //     tree_ctx.context.start_data_load(
-        //         DataSource::Url(start_url.to_owned()),
-        //         LoadDatasetArgs::default(),
-        //         LoadInitArgs::default(),
-        //         TrainConfig::default(),
-        //     );
-        // }
+        let mut start_url = None;
+        if cfg!(target_family = "wasm") {
+            if let Some(window) = web_sys::window() {
+                if let Ok(search) = window.location().search() {
+                    if let Ok(search_params) = web_sys::UrlSearchParams::new_with_str(&search) {
+                        let url = search_params.get("url");
+                        start_url = url;
+                    }
+                }
+            }
+        }
+        if let Some(start_url) = start_url {
+            context.start_ply_load(DataSource::Url(start_url.to_owned()));
+        }
 
         Viewer {
             app_context: context,
             main_panel,
             top_panel,
-            // tree,
-            // tree_ctx,
         }
     }
 }
@@ -158,6 +109,6 @@ impl eframe::App for Viewer {
 
         egui_extras::install_image_loaders(ctx);
         self.top_panel.show(&mut self.app_context);
-        self.main_panel.show(&self.app_context);
+        self.main_panel.show(&mut self.app_context);
     }
 }
