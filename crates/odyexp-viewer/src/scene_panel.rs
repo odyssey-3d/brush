@@ -183,9 +183,7 @@ impl ScenePanel {
         let size = glam::uvec2(size.x.round() as u32, size.y.round() as u32);
         let rect = context.controls.handle_user_input(ui, size, delta_time);
 
-        let total_transform = context.model_transform * context.controls.transform;
-        context.camera.position = total_transform.translation.into();
-        context.camera.rotation = glam::Quat::from_mat3a(&total_transform.matrix3);
+        context.update_camera();
 
         context.controls.dirty = false;
 

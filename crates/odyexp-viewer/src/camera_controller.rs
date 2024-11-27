@@ -26,6 +26,10 @@ pub struct CameraController {
     rotate_momentum: Vec2,
 
     fine_tuning_scalar: f32,
+
+    base_focus: Vec3A,
+    base_transform: Affine3A,
+    base_distance: f32,
 }
 
 impl CameraController {
@@ -45,7 +49,25 @@ impl CameraController {
             rotate_momentum: Vec2::ZERO,
 
             fine_tuning_scalar: 0.2,
+            base_transform: transform,
+            base_focus: Vec3A::ZERO,
+            base_distance: 10.0,
         }
+    }
+
+    pub fn reset(&mut self) {
+        self.transform = self.base_transform;
+        self.distance = self.base_distance;
+        self.focus = self.base_focus;
+        self.dolly_momentum = Vec3A::ZERO;
+        self.rotate_momentum = Vec2::ZERO;
+        self.dirty = true;
+    }
+
+    pub fn camera_has_moved(&self) -> bool {
+        self.transform != self.base_transform
+            || self.distance != self.base_distance
+            || self.focus != self.base_focus
     }
 
     pub fn rotate_dolly_and_zoom(

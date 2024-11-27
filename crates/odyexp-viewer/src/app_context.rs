@@ -95,6 +95,18 @@ impl ViewerContext {
         }
     }
 
+    pub fn reset_camera(&mut self) {
+        self.controls.reset();
+        self.update_camera();
+    }
+
+
+    pub fn update_camera(&mut self) {
+        let total_transform = self.model_transform * self.controls.transform;
+        self.camera.position = total_transform.translation.into();
+        self.camera.rotation = Quat::from_mat3a(&total_transform.matrix3);
+    }
+
     pub fn set_up_axis(&mut self, up_axis: Vec3) {
         let rotation = Quat::from_rotation_arc(Vec3::Y, up_axis);
         let model_transform = Affine3A::from_rotation_translation(rotation, Vec3::ZERO).inverse();

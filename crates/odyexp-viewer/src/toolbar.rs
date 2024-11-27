@@ -15,10 +15,9 @@ impl Toolbar {
                 outer_margin: egui::epaint::Margin::same(6.0),
                 rounding: egui::Rounding::same(12.0),
                 shadow: eframe::epaint::Shadow::default(),
-                stroke: egui::Stroke::new(0.5, Color32::DARK_GRAY.gamma_multiply(0.5)),
-                fill: Color32::BLACK,
-            }
-            .multiply_with_opacity(0.5),
+                stroke: egui::Stroke::new(1.0, egui::Color32::WHITE.gamma_multiply(0.2)),
+                fill: egui::Color32::from_black_alpha(77),
+            },
         }
     }
 
@@ -29,13 +28,11 @@ impl Toolbar {
 
         let ctx = &app_context.egui_ctx.clone();
         let outer_margin = self.frame.outer_margin.left_top();
-        let button_rounding = self.frame.rounding.ne;
-
-        let button_ratio = 0.03; // relative to screen height
+        let button_rounding = 6.0;
 
         let screen_rect = ctx.input(|i: &egui::InputState| i.screen_rect());
 
-        let button_size = button_ratio * screen_rect.height();
+        let button_size = 30.0;
         let margin = 0.2 * button_size;
         let toolbar_width = button_size + 2.0 * margin;
 
@@ -59,7 +56,7 @@ impl Toolbar {
         // let position = egui::pos2(position.x, window_rect.top());
 
         self.draw_camera_tools(
-            ctx,
+            app_context,
             position,
             outer_margin,
             margin,
@@ -71,7 +68,7 @@ impl Toolbar {
 
     fn draw_camera_tools(
         &mut self,
-        ctx: &egui::Context,
+        app_context: &mut ViewerContext,
         position: egui::Pos2,
         outer_margin: egui::Vec2,
         margin: f32,
@@ -79,7 +76,8 @@ impl Toolbar {
         button_rounding: f32,
         toolbar_width: f32,
     ) {
-        self.tool_group(&ctx, position, |ui| {
+        let ctx = &app_context.egui_ctx.clone();
+        self.tool_group(ctx, position, |ui| {
             let button_pos = egui::pos2(
                 position.x + outer_margin.x + margin,
                 position.y + outer_margin.y + margin,
@@ -91,11 +89,11 @@ impl Toolbar {
                     button_pos,
                     button_size,
                     button_rounding,
-                    true,
+                    app_context.controls.camera_has_moved(),
                 )
                 .clicked()
             {
-                println!("camera button clicked");
+                app_context.reset_camera();
             };
 
             ui.allocate_space(egui::vec2(toolbar_width, outer_margin.y));
