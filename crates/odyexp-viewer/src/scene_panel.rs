@@ -41,6 +41,7 @@ pub(crate) struct ScenePanel {
 
     grid: Grid,
 }
+
 impl ScenePanel {
     pub(crate) fn new(
         queue: Arc<wgpu::Queue>,

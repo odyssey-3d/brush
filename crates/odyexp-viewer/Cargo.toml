@@ -7,7 +7,6 @@ license.workspace = true
 
 [dependencies]
 # Brush deps.
-# brush-train.path = "../brush-train"
 brush-dataset.path = "../brush-dataset"
 brush-ui.path = "../brush-ui"
 brush-render.path = "../brush-render"
@@ -47,10 +46,6 @@ tokio-stream.workspace = true
 reqwest.workspace = true
 urlencoding.workspace = true
 
-
-[target.'cfg(not(target_family = "wasm"))'.dependencies]
-rerun.workspace = true
-brush-rerun.path = "../brush-rerun"
 
 [target.'cfg(target_family = "wasm")'.dependencies]
 tracing-wasm.workspace = true
