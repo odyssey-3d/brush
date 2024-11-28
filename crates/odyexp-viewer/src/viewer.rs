@@ -1,7 +1,8 @@
+use ::tokio::sync::mpsc::UnboundedReceiver;
 use eframe::egui;
 
 use crate::{
-    app_context::{ViewerContext, ViewerMessage},
+    app_context::{parse_search, CameraSettings, UiControlMessage, ViewerContext, ViewerMessage},
     load::DataSource,
     main_panel::MainPanel,
     toolbar::Toolbar,
@@ -16,7 +17,11 @@ pub struct Viewer {
 }
 
 impl Viewer {
-    pub fn new(cc: &eframe::CreationContext) -> Self {
+    pub fn new(
+        cc: &eframe::CreationContext,
+        start_uri: Option<String>,
+        _controller: UnboundedReceiver<UiControlMessage>,
+    ) -> Self {
         let state = cc.wgpu_render_state.as_ref().unwrap();
         let device = brush_ui::create_wgpu_device(
             state.adapter.clone(),
@@ -31,7 +36,7 @@ impl Viewer {
                 let subscriber = tracing_subscriber::registry().with(tracing_wasm::WASMLayer::new(Default::default()));
                 tracing::subscriber::set_global_default(subscriber)
                     .expect("Failed to set tracing subscriber");
-            } else if #[cfg(feature = "tracy")] {
+            } else if #[cfg(feature = "tracing")] {
                 use tracing_subscriber::layer::SubscriberExt;
                 let subscriber = tracing_subscriber::registry()
                     .with(tracing_tracy::TracyLayer::default())
@@ -41,8 +46,57 @@ impl Viewer {
             }
         }
 
-        let up_axis = glam::Vec3::Y;
-        let mut context = ViewerContext::new(device.clone(), cc.egui_ctx.clone(), up_axis);
+        #[cfg(target_family = "wasm")]
+        let start_uri = start_uri.or(web_sys::window().and_then(|w| w.location().search().ok()));
+        let search_params = parse_search(&start_uri.unwrap_or("".to_owned()));
+
+        let focal = search_params
+            .get("focal")
+            .and_then(|f| f.parse().ok())
+            .unwrap_or(0.5);
+        let radius = search_params
+            .get("radius")
+            .and_then(|f| f.parse().ok())
+            .unwrap_or(4.0);
+        let min_radius = search_params
+            .get("min_radius")
+            .and_then(|f| f.parse().ok())
+            .unwrap_or(1.0);
+        let max_radius = search_params
+            .get("max_radius")
+            .and_then(|f| f.parse().ok())
+            .unwrap_or(10.0);
+
+        let min_yaw = search_params
+            .get("min_yaw")
+            .and_then(|f| f.parse::<f32>().ok())
+            .map(|d| d.to_radians())
+            .unwrap_or(f32::MIN);
+        let max_yaw = search_params
+            .get("max_yaw")
+            .and_then(|f| f.parse::<f32>().ok())
+            .map(|d| d.to_radians())
+            .unwrap_or(f32::MAX);
+
+        let min_pitch = search_params
+            .get("min_pitch")
+            .and_then(|f| f.parse::<f32>().ok())
+            .map(|d| d.to_radians())
+            .unwrap_or(f32::MIN);
+        let max_pitch = search_params
+            .get("max_pitch")
+            .and_then(|f| f.parse::<f32>().ok())
+            .map(|d| d.to_radians())
+            .unwrap_or(f32::MAX);
+
+        let cam_settings = CameraSettings {
+            focal,
+            radius,
+            radius_range: min_radius..max_radius,
+            yaw_range: min_yaw..max_yaw,
+            pitch_range: min_pitch..max_pitch,
+        };
+        let mut context = ViewerContext::new(device.clone(), cc.egui_ctx.clone(), cam_settings);
 
         let mut start_url = None;
         if cfg!(target_family = "wasm") {

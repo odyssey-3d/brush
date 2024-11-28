@@ -1,9 +1,11 @@
+use std::collections::HashMap;
+use std::ops::Range;
 use std::sync::Arc;
 
 use brush_render::{camera::Camera, gaussian_splats::Splats};
 use burn_wgpu::{Wgpu, WgpuDevice};
 
-use glam::{vec2, Affine3A, Quat, Vec3};
+use glam::{Affine3A, Quat, Vec3};
 
 use tokio_with_wasm::alias as tokio;
 
@@ -16,6 +18,10 @@ use crate::load::{process_loading_loop, DataSource};
 use tokio_stream::StreamExt;
 
 type Backend = Wgpu;
+
+pub enum UiControlMessage {
+    LoadData(String),
+}
 
 #[derive(Clone, Debug)]
 pub(crate) enum ViewerMessage {
@@ -52,6 +58,15 @@ impl UILayout {
     }
 }
 
+pub(crate) struct CameraSettings {
+    pub focal: f64,
+    pub radius: f32,
+
+    pub yaw_range: Range<f32>,
+    pub pitch_range: Range<f32>,
+    pub radius_range: Range<f32>,
+}
+
 // TODO: Bit too much random shared state here.
 pub(crate) struct ViewerContext {
     pub model_transform: Affine3A,
@@ -72,14 +87,27 @@ pub(crate) struct ViewerContext {
 }
 
 impl ViewerContext {
-    pub fn new(device: WgpuDevice, ctx: egui::Context, up_axis: Vec3) -> Self {
-        let rotation = Quat::from_rotation_arc(Vec3::Y, up_axis);
+    pub(crate) fn new(
+        device: WgpuDevice,
+        ctx: egui::Context,
+        cam_settings: CameraSettings,
+    ) -> Self {
+        let model_transform = Affine3A::IDENTITY;
 
-        let model_transform = Affine3A::from_rotation_translation(rotation, Vec3::ZERO).inverse();
-        let controls = CameraController::new(Affine3A::from_translation(-Vec3::Z * 10.0));
+        let controls = CameraController::new(
+            cam_settings.radius,
+            cam_settings.radius_range,
+            cam_settings.yaw_range,
+            cam_settings.pitch_range,
+        );
 
-        // Camera position will be controller by controls.
-        let camera = Camera::new(-Vec3::Z * 10.0, Quat::IDENTITY, 0.35, 0.35, vec2(0.5, 0.5));
+        let camera = Camera::new(
+            Vec3::ZERO,
+            Quat::IDENTITY,
+            cam_settings.focal,
+            cam_settings.focal,
+            glam::vec2(0.5, 0.5),
+        );
 
         Self {
             model_transform,
@@ -95,19 +123,18 @@ impl ViewerContext {
         }
     }
 
-    pub fn reset_camera(&mut self) {
+    pub(crate) fn reset_camera(&mut self) {
         self.controls.reset();
         self.update_camera();
     }
 
-
-    pub fn update_camera(&mut self) {
-        let total_transform = self.model_transform * self.controls.transform;
+    pub(crate) fn update_camera(&mut self) {
+        let total_transform = self.model_transform * self.controls.transform();
         self.camera.position = total_transform.translation.into();
         self.camera.rotation = Quat::from_mat3a(&total_transform.matrix3);
     }
 
-    pub fn set_up_axis(&mut self, up_axis: Vec3) {
+    pub(crate) fn set_up_axis(&mut self, up_axis: Vec3) {
         let rotation = Quat::from_rotation_arc(Vec3::Y, up_axis);
         let model_transform = Affine3A::from_rotation_translation(rotation, Vec3::ZERO).inverse();
         self.model_transform = model_transform;
@@ -152,4 +179,20 @@ impl ViewerContext {
 
         task::spawn(fut);
     }
+}
+
+pub(crate) fn parse_search(search: &str) -> HashMap<String, String> {
+    let mut params = HashMap::new();
+    let search = search.trim_start_matches('?');
+    for pair in search.split('&') {
+        // Split each pair on '=' to separate key and value
+        if let Some((key, value)) = pair.split_once('=') {
+            // URL decode the key and value and insert into HashMap
+            params.insert(
+                urlencoding::decode(key).unwrap_or_default().into_owned(),
+                urlencoding::decode(value).unwrap_or_default().into_owned(),
+            );
+        }
+    }
+    params
 }

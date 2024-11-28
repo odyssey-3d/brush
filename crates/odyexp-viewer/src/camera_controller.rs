@@ -1,6 +1,8 @@
 use core::f32;
+use std::ops::Range;
+
 use egui::Rect;
-use glam::{Affine3A, Mat3A, Vec2, Vec3A};
+use glam::{Affine3A, EulerRot, Quat, Vec2, Vec3A};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum CameraRotateMode {
@@ -9,12 +11,14 @@ pub enum CameraRotateMode {
 }
 
 pub struct CameraController {
-    pub transform: Affine3A,
+    pub position: Vec3A,
+    pub yaw: f32,
+    pub pitch: f32,
 
     pub focus: Vec3A,
     pub dirty: bool,
 
-    pub distance: f32,
+    pub radius: f32,
 
     pub rotate_mode: CameraRotateMode,
 
@@ -25,21 +29,42 @@ pub struct CameraController {
     dolly_momentum: Vec3A,
     rotate_momentum: Vec2,
 
+    radius_range: Range<f32>,
+    yaw_range: Range<f32>,
+    pitch_range: Range<f32>,
+
     fine_tuning_scalar: f32,
 
     base_focus: Vec3A,
-    base_transform: Affine3A,
+    base_position: Vec3A,
+    base_yaw: f32,
+    base_pitch: f32,
     base_distance: f32,
 }
 
 impl CameraController {
-    pub fn new(transform: Affine3A) -> Self {
+    pub fn new(
+        radius: f32,
+        radius_range: Range<f32>,
+        yaw_range: Range<f32>,
+        pitch_range: Range<f32>,
+    ) -> Self {
+        let position = -Vec3A::Z * radius;
+        let base_position = position;
         Self {
-            transform,
+            yaw: 0.0,
+            pitch: 0.0,
+            radius,
+
+            position,
             focus: Vec3A::ZERO,
+
+            radius_range,
+            yaw_range,
+            pitch_range,
+
             dirty: false,
 
-            distance: 10.0,
             rotate_mode: CameraRotateMode::PanTilt,
             movement_speed: 0.2,
             rotation_speed: 0.005,
@@ -49,15 +74,40 @@ impl CameraController {
             rotate_momentum: Vec2::ZERO,
 
             fine_tuning_scalar: 0.2,
-            base_transform: transform,
+
+            base_position,
+            base_yaw: 0.0,
+            base_pitch: 0.0,
             base_focus: Vec3A::ZERO,
             base_distance: 10.0,
         }
     }
 
+    fn clamp_smooth(val: f32, range: Range<f32>) -> f32 {
+        let mut val = val;
+        if val < range.start {
+            val = val * 0.5 + range.start * 0.5;
+        }
+
+        if val > range.end {
+            val = val * 0.5 + range.end * 0.5;
+        }
+        val
+    }
+
+    #[allow(dead_code)]
+    fn clamp_rotation(quat: Quat, pitch_range: Range<f32>, yaw_range: Range<f32>) -> Quat {
+        let (pitch, yaw, _) = quat.to_euler(EulerRot::YXZ);
+        let clamped_pitch = Self::clamp_smooth(pitch, pitch_range);
+        let clamped_yaw = Self::clamp_smooth(yaw, yaw_range);
+        Quat::from_euler(EulerRot::YXZ, clamped_yaw, clamped_pitch, 0.0)
+    }
+
     pub fn reset(&mut self) {
-        self.transform = self.base_transform;
-        self.distance = self.base_distance;
+        self.position = self.base_position;
+        self.yaw = self.base_yaw;
+        self.pitch = self.base_pitch;
+        self.radius = self.base_distance;
         self.focus = self.base_focus;
         self.dolly_momentum = Vec3A::ZERO;
         self.rotate_momentum = Vec2::ZERO;
@@ -65,8 +115,10 @@ impl CameraController {
     }
 
     pub fn camera_has_moved(&self) -> bool {
-        self.transform != self.base_transform
-            || self.distance != self.base_distance
+        self.position != self.base_position
+            || self.yaw != self.base_yaw
+            || self.pitch != self.base_pitch
+            || self.radius != self.base_distance
             || self.focus != self.base_focus
     }
 
@@ -79,42 +131,35 @@ impl CameraController {
     ) {
         self.zoom(scroll);
         self.dolly(movement, delta_time);
-        match self.rotate_mode {
-            CameraRotateMode::Orbit => {
-                self.orbit(rotate, delta_time);
-            }
-            CameraRotateMode::PanTilt => {
-                self.pan_and_tilt(rotate, delta_time);
-            }
-        }
+        self.handle_rotate(rotate, delta_time);
     }
 
-    pub fn zoom(&mut self, scroll: f32) {
-        let mut radius = self.distance;
+    fn get_rotation(&self) -> Quat {
+        Quat::from_rotation_y(self.yaw) * Quat::from_rotation_x(self.pitch)
+    }
+
+    fn update_position(&mut self) {
+        let rotation = self.get_rotation();
+        self.position = self.focus + rotation * Vec3A::new(0.0, 0.0, -self.radius);
+    }
+
+    fn update_focus(&mut self) {
+        let rotation = self.get_rotation();
+        self.focus = self.position - rotation * Vec3A::new(0.0, 0.0, -self.radius);
+    }
+
+    fn zoom(&mut self, scroll: f32) {
+        let mut radius = self.radius;
         radius -= scroll * radius * self.zoom_speed;
-
-        let min = 0.25;
-        let max = 100.0;
-
-        if radius < min {
-            radius = radius * 0.5 + min * 0.5;
-        }
-
-        if radius > max {
-            radius = radius * 0.5 + max * 0.5;
-        }
-        self.distance = radius;
-
-        let rotation = self.transform.matrix3;
-        self.transform.translation = self.focus + rotation * Vec3A::new(0.0, 0.0, -self.distance);
-        self.transform.matrix3 = rotation;
+        radius = Self::clamp_smooth(radius, self.radius_range.clone());
+        self.radius = radius;
     }
 
     pub fn dolly(&mut self, movement: Vec3A, delta_time: f32) {
-        let rotation = self.transform.matrix3;
+        let rotation = self.get_rotation();
 
-        self.dolly_momentum += movement * self.movement_speed;
         let damping = 0.0005f32.powf(delta_time);
+        self.dolly_momentum += movement * self.movement_speed;
         self.dolly_momentum *= damping;
 
         let pan_velocity = self.dolly_momentum * delta_time;
@@ -124,55 +169,32 @@ impl CameraController {
         let up = rotation * Vec3A::Y * -scaled_pan.y;
         let forward = rotation * Vec3A::Z * -scaled_pan.z;
 
-        let translation = (right + up + forward) * self.distance;
+        let translation = (right + up + forward) * self.radius;
         self.focus += translation;
-
-        let rotation = self.transform.matrix3;
-        self.transform.translation = self.focus + rotation * Vec3A::new(0.0, 0.0, -self.distance);
-    }
-
-    pub fn pan_and_tilt(&mut self, rotate: Vec2, delta_time: f32) {
-        self.rotate_momentum += rotate * self.rotation_speed;
-        let damping = 0.0005f32.powf(delta_time);
-        self.rotate_momentum *= damping;
-
-        let rotate_velocity = self.rotate_momentum * delta_time;
-
-        let delta_x = rotate_velocity.x * std::f32::consts::PI * 2.0;
-        let delta_y = rotate_velocity.y * std::f32::consts::PI;
-        let yaw = Mat3A::from_rotation_y(delta_x);
-        let pitch = Mat3A::from_rotation_x(-delta_y);
-
-        self.transform.matrix3 = yaw * self.transform.matrix3 * pitch;
-        self.focus = self.transform.translation
-            - self.transform.matrix3 * Vec3A::new(0.0, 0.0, -self.distance);
-    }
-
-    pub fn orbit(&mut self, rotate: Vec2, delta_time: f32) {
-        self.rotate_momentum += rotate * self.rotation_speed;
-        let damping = 0.0005f32.powf(delta_time);
-        self.rotate_momentum *= damping;
-
-        let rotate_velocity = self.rotate_momentum * delta_time;
-
-        let delta_x = rotate_velocity.x * std::f32::consts::PI * 2.0;
-        let delta_y = rotate_velocity.y * std::f32::consts::PI;
-        let yaw = Mat3A::from_rotation_y(delta_x);
-        let pitch = Mat3A::from_rotation_x(-delta_y);
-        self.transform.matrix3 = yaw * self.transform.matrix3 * pitch;
-        self.transform.translation =
-            self.focus + self.transform.matrix3 * Vec3A::new(0.0, 0.0, -self.distance);
+        self.update_position();
     }
 
     pub fn handle_rotate(&mut self, rotate: Vec2, delta_time: f32) {
-        match self.rotate_mode {
-            CameraRotateMode::Orbit => {
-                self.orbit(rotate, delta_time);
-            }
-            CameraRotateMode::PanTilt => {
-                let rotate = Vec2::new(rotate.x, -rotate.y);
-                self.pan_and_tilt(rotate, delta_time);
-            }
+        let damping = 0.0005f32.powf(delta_time);
+        self.rotate_momentum += rotate * self.rotation_speed;
+        self.rotate_momentum *= damping;
+
+        let rotate_velocity = self.rotate_momentum * delta_time;
+
+        let delta_x = rotate_velocity.x * std::f32::consts::PI * 2.0;
+        let delta_y = rotate_velocity.y * std::f32::consts::PI;
+
+        let mut yaw = self.yaw;
+        let mut pitch = self.pitch;
+        yaw = Self::clamp_smooth(yaw + delta_x, self.yaw_range.clone());
+        pitch = Self::clamp_smooth(pitch - delta_y, self.pitch_range.clone());
+        self.yaw = yaw;
+        self.pitch = pitch;
+
+        if self.rotate_mode == CameraRotateMode::Orbit {
+            self.update_position();
+        } else {
+            self.update_focus();
         }
     }
 
@@ -206,10 +228,12 @@ impl CameraController {
             dolly_z *= self.fine_tuning_scalar;
         }
 
-        self.dolly(
-            Vec3A::new(dolly_x, dolly_y, dolly_z),
-            delta_time.as_secs_f32(),
-        );
+        if dolly_x.abs() > 0.0 || dolly_y.abs() > 0.0 || dolly_z.abs() > 0.0 {
+            self.dolly(
+                Vec3A::new(dolly_x, dolly_y, dolly_z),
+                delta_time.as_secs_f32(),
+            );
+        }
     }
 
     fn check_for_pan_tilt(&mut self, ui: &mut egui::Ui, delta_time: std::time::Duration) {
@@ -262,7 +286,7 @@ impl CameraController {
         let scrolled = ui.input(|r| {
             r.smooth_scroll_delta.y
                 + r.multi_touch()
-                    .map(|t| (t.zoom_delta - 1.0) * self.distance * 5.0)
+                    .map(|t| (t.zoom_delta - 1.0) * self.radius * 5.0)
                     .unwrap_or(0.0)
         });
 
@@ -290,5 +314,12 @@ impl CameraController {
             || self.dirty;
 
         rect
+    }
+
+    pub(crate) fn transform(&self) -> Affine3A {
+        Affine3A::from_rotation_translation(
+            Quat::from_rotation_y(self.yaw) * Quat::from_rotation_x(self.pitch),
+            self.position.into(),
+        )
     }
 }
