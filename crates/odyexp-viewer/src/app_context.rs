@@ -8,19 +8,23 @@ use glam::{Affine3A, Quat, Vec3};
 
 use tokio_with_wasm::alias as tokio;
 
-use ::tokio::sync::mpsc::channel;
-use ::tokio::sync::mpsc::Receiver;
+use ::tokio::sync::mpsc::{channel, Receiver, UnboundedReceiver, UnboundedSender};
+
 use tokio::task;
+use tokio_stream::StreamExt;
 
 use crate::camera_controller::CameraController;
 use crate::camera_controller::CameraSettings;
 use crate::load::{process_loading_loop, DataSource};
-use tokio_stream::StreamExt;
+
+use brush_dataset::splat_export;
 
 type Backend = Wgpu;
 
 pub enum UiControlMessage {
     LoadData(String),
+    SaveSplats,
+    ResetCamera,
 }
 
 #[derive(Clone, Debug)]
@@ -68,7 +72,10 @@ pub(crate) struct ViewerContext {
     pub camera: Camera,
     pub controls: CameraController,
 
-    pub receiver: Option<Receiver<ViewerMessage>>,
+    pub process_messages_receiver: Option<Receiver<ViewerMessage>>,
+
+    pub ui_control_receiver: UnboundedReceiver<UiControlMessage>,
+    pub ui_control_sender: UnboundedSender<UiControlMessage>,
 
     pub filename: Option<String>,
     pub view_splats: Vec<Splats<Wgpu>>,
@@ -82,6 +89,7 @@ impl ViewerContext {
         device: WgpuDevice,
         ctx: egui::Context,
         cam_settings: CameraSettings,
+        controller: UnboundedReceiver<UiControlMessage>,
     ) -> Self {
         let model_transform = Affine3A::IDENTITY;
 
@@ -102,17 +110,40 @@ impl ViewerContext {
             glam::vec2(0.5, 0.5),
         );
 
+        // TODO: Generalize this "inner control" logic.
+        let (inner_send, inner_recv) = ::tokio::sync::mpsc::unbounded_channel();
+        let sender = inner_send.clone();
+        let ctx_spawn = ctx.clone();
+        let mut controller = controller;
+        task::spawn(async move {
+            // Loop until there are no more messages, processing is done.
+            while let Some(m) = controller.recv().await {
+                ctx_spawn.request_repaint();
+
+                // Give back to the runtime for a second.
+                // This only really matters in the browser.
+                tokio::task::yield_now().await;
+
+                // If channel is closed, bail.
+                if sender.send(m).is_err() {
+                    break;
+                }
+            }
+        });
+
         Self {
             model_transform,
             camera,
             controls,
             device,
             egui_ctx: ctx,
-            receiver: None,
+            process_messages_receiver: None,
             filename: None,
             view_splats: vec![],
             frame: 0.0,
             ui_layout: UILayout::default(),
+            ui_control_receiver: inner_recv,
+            ui_control_sender: inner_send,
         }
     }
 
@@ -133,7 +164,7 @@ impl ViewerContext {
         self.model_transform = model_transform;
     }
 
-    pub(crate) fn start_ply_load(&mut self, source: DataSource) {
+    pub(crate) fn load_splats_from_ply(&mut self, source: DataSource) {
         let device = self.device.clone();
         log::info!("Start data load");
 
@@ -141,7 +172,7 @@ impl ViewerContext {
         // Bigger channels could mean the train loop spends less time waiting for the UI though.
         let (sender, receiver) = channel(1);
 
-        self.receiver = Some(receiver);
+        self.process_messages_receiver = Some(receiver);
 
         let ctx = self.egui_ctx.clone();
 
@@ -171,6 +202,58 @@ impl ViewerContext {
         };
 
         task::spawn(fut);
+    }
+
+    pub(crate) fn save_splats_to_ply(&mut self, splats: Splats<Wgpu>) {
+        let fut = async move {
+            let file = rrfd::save_file("export.ply").await;
+
+            // Not sure where/how to show this error if any.
+            match file {
+                Err(e) => {
+                    log::error!("Failed to save file: {e}");
+                }
+                Ok(file) => {
+                    let data = splat_export::splat_to_ply(splats).await;
+
+                    let data = match data {
+                        Ok(data) => data,
+                        Err(e) => {
+                            log::error!("Failed to serialize file: {e}");
+                            return;
+                        }
+                    };
+
+                    if let Err(e) = file.write(&data).await {
+                        log::error!("Failed to write file: {e}");
+                    }
+                }
+            }
+        };
+
+        tokio::task::spawn(fut);
+    }
+
+    pub(crate) fn process_control_messages(&mut self) {
+        while let Ok(m) = self.ui_control_receiver.try_recv() {
+            match m {
+                UiControlMessage::LoadData(url) => {
+                    self.load_splats_from_ply(DataSource::Url(url.to_owned()));
+                }
+                UiControlMessage::SaveSplats => {
+                    self.save_splats_to_ply(self.current_splats().clone());
+                }
+                UiControlMessage::ResetCamera => {
+                    self.reset_camera();
+                }
+            }
+        }
+    }
+
+    pub(crate) fn current_splats(&self) -> &Splats<Wgpu> {
+        const FPS: usize = 24;
+        let frame: usize = ((self.frame * FPS as f32).floor() as usize) % self.view_splats.len();
+        self.view_splats.get(frame).unwrap()
     }
 }
 

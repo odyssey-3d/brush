@@ -21,7 +21,7 @@ impl Viewer {
     pub fn new(
         cc: &eframe::CreationContext,
         start_uri: Option<String>,
-        _controller: UnboundedReceiver<UiControlMessage>,
+        controller: UnboundedReceiver<UiControlMessage>,
     ) -> Self {
         let state = cc.wgpu_render_state.as_ref().unwrap();
         let device = brush_ui::create_wgpu_device(
@@ -35,7 +35,12 @@ impl Viewer {
         let search_params = parse_search(&start_uri.unwrap_or("".to_owned()));
 
         let cam_settings = parse_camera_settings(search_params);
-        let mut context = ViewerContext::new(device.clone(), cc.egui_ctx.clone(), cam_settings);
+        let mut context = ViewerContext::new(
+            device.clone(),
+            cc.egui_ctx.clone(),
+            cam_settings,
+            controller,
+        );
 
         let mut start_url = None;
         if cfg!(target_family = "wasm") {
@@ -50,7 +55,7 @@ impl Viewer {
         }
 
         if let Some(start_url) = start_url {
-            context.start_ply_load(DataSource::Url(start_url.to_owned()));
+            context.load_splats_from_ply(DataSource::Url(start_url.to_owned()));
         }
 
         let main_panel = MainPanel::new(
@@ -73,7 +78,9 @@ impl Viewer {
 
 impl eframe::App for Viewer {
     fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
-        if let Some(rec) = self.app_context.receiver.as_mut() {
+        self.app_context.process_control_messages();
+
+        if let Some(rec) = self.app_context.process_messages_receiver.as_mut() {
             let mut messages = vec![];
 
             while let Ok(message) = rec.try_recv() {

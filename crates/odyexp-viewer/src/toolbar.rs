@@ -1,7 +1,7 @@
 use eframe::egui;
 use egui::Color32;
 
-use crate::app_context::{ViewerContext, ViewerMessage};
+use crate::app_context::{UiControlMessage, ViewerContext, ViewerMessage};
 
 pub(crate) struct Toolbar {
     frame: egui::Frame,
@@ -93,7 +93,9 @@ impl Toolbar {
                 )
                 .clicked()
             {
-                app_context.reset_camera();
+                let _ = app_context
+                    .ui_control_sender
+                    .send(UiControlMessage::ResetCamera);
             };
 
             ui.allocate_space(egui::vec2(toolbar_width, outer_margin.y));

@@ -156,6 +156,16 @@ mod embedded {
                 .ui_control
                 .send(UiControlMessage::LoadData(url.to_owned()));
         }
+
+        #[wasm_bindgen]
+        pub fn save_splats(&self) {
+            let _ = self.ui_control.send(UiControlMessage::SaveSplats);
+        }
+
+        #[wasm_bindgen]
+        pub fn reset_camera(&self) {
+            let _ = self.ui_control.send(UiControlMessage::ResetCamera);
+        }
     }
 }
 

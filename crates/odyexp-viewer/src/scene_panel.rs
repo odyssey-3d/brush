@@ -201,10 +201,7 @@ impl ScenePanel {
         if context.view_splats.is_empty() {
             self.grid.draw(ui.painter(), rect, mvp);
         } else {
-            const FPS: usize = 24;
-            let frame = ((context.frame * FPS as f32).floor() as usize) % context.view_splats.len();
-
-            self.draw_splats(ui, context, size, rect, &context.view_splats[frame]);
+            self.draw_splats(ui, context, size, rect, &context.current_splats());
             self.show_splat_options(ui, context, delta_time);
         }
     }

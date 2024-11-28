@@ -1,7 +1,7 @@
 use eframe::egui;
 
 use crate::{
-    app_context::{ViewerContext, ViewerMessage},
+    app_context::{UiControlMessage, ViewerContext, ViewerMessage},
     load::DataSource,
 };
 
@@ -97,12 +97,11 @@ impl TopPanel {
                                     egui::ImageButton::new(egui::Image::new(egui::include_image!(
                                         "../assets/back-arrow.png"
                                     )))
-                                    .frame(false)
                                     .rounding(egui::Rounding::same(margin)),
                                 )
                                 .clicked()
                             {
-                                app_context.start_ply_load(DataSource::PickFile);
+                                app_context.load_splats_from_ply(DataSource::PickFile);
                             };
 
                             let button_pos =
@@ -127,7 +126,7 @@ impl TopPanel {
                                 )
                                 .clicked()
                             {
-                                println!("clicked");
+                                let _ = app_context.ui_control_sender.send(UiControlMessage::SaveSplats);
                             };
 
                             if self.is_loading {
