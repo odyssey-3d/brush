@@ -4,6 +4,7 @@ mod top_panel;
 mod toolbar;
 
 mod load;
+mod draw;
 
 pub(crate) mod camera_controller;
 

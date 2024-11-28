@@ -13,11 +13,14 @@ use core::f32;
 
 use eframe::egui_wgpu::Renderer;
 use egui::epaint::mutex::RwLock as EguiRwLock;
+
 use egui::{Color32, Rect};
 
 use web_time::Instant;
 
 use crate::app_context::{ViewerContext, ViewerMessage};
+
+use crate::draw::Grid;
 
 type Backend = Wgpu;
 
@@ -35,6 +38,8 @@ pub(crate) struct ScenePanel {
     dirty: bool,
 
     renderer: Arc<EguiRwLock<Renderer>>,
+
+    grid: Grid,
 }
 impl ScenePanel {
     pub(crate) fn new(
@@ -52,6 +57,7 @@ impl ScenePanel {
             is_loading: false,
             is_paused: false,
             renderer,
+            grid: Grid::new(16, 1.0).with_color(Color32::WHITE.gamma_multiply(0.2)),
         }
     }
 
@@ -63,7 +69,7 @@ impl ScenePanel {
         rect: Rect,
         splats: &Splats<Backend>,
     ) {
-        if ui.ctx().has_requested_repaint() && size.x > 0 && size.y > 0 && self.dirty {
+        if self.dirty {
             let _span = trace_span!("Render splats").entered();
             let (img, _) = splats.render(&context.camera, size, true);
             self.backbuffer.update_texture(img, self.renderer.clone());
@@ -73,8 +79,6 @@ impl ScenePanel {
 
         if let Some(id) = self.backbuffer.id() {
             ui.scope(|ui| {
-                ui.painter().rect_filled(rect, 0.0, Color32::BLACK);
-
                 ui.painter().image(
                     id,
                     rect,
@@ -160,15 +164,6 @@ impl ScenePanel {
 
         self.last_draw = Some(cur_time);
 
-        // Empty scene, nothing to show.
-        if !self.is_loading && context.view_splats.is_empty() && self.err.is_none() {
-            return;
-        }
-
-        if context.view_splats.is_empty() {
-            return;
-        }
-
         let mut size = ui.available_size();
         // Always keep some margin at the bottom
         size.y -= 50.0;
@@ -184,14 +179,32 @@ impl ScenePanel {
 
         self.dirty |= context.controls.dirty;
         context.update_camera();
-
         context.controls.dirty = false;
 
         self.dirty |= self.last_size != size;
-        const FPS: usize = 24;
-        let frame = ((context.frame * FPS as f32).floor() as usize) % context.view_splats.len();
 
-        self.draw_splats(ui, context, size, rect, &context.view_splats[frame]);
-        self.show_splat_options(ui, context, delta_time);
+        let viewport = rect;
+        let eye = context.controls.position;
+        let focus = context.controls.focus;
+        let view_matrix = glam::Mat4::look_at_lh(eye.into(), focus.into(), glam::Vec3::Y);
+        // let view_matrix = context.camera.world_to_local();
+        let projection_matrix = glam::Mat4::perspective_infinite_reverse_lh(
+            context.camera.fov_y as f32,
+            (viewport.width() / viewport.height()).into(),
+            0.1,
+        );
+
+        let mvp = projection_matrix * view_matrix;
+
+        //for now hide the grid when splats are being shown maybe add setting for this later
+        if context.view_splats.is_empty() {
+            self.grid.draw(ui.painter(), rect, mvp);
+        } else {
+            const FPS: usize = 24;
+            let frame = ((context.frame * FPS as f32).floor() as usize) % context.view_splats.len();
+
+            self.draw_splats(ui, context, size, rect, &context.view_splats[frame]);
+            self.show_splat_options(ui, context, delta_time);
+        }
     }
 }

@@ -233,6 +233,9 @@ impl CameraController {
         let translation = (right + up + forward) * self.radius;
         self.focus += translation;
         self.update_position();
+        if self.dolly_momentum.length_squared() < 1e-6 {
+            self.dolly_momentum = Vec3A::ZERO;
+        }
     }
 
     pub fn handle_rotate(&mut self, rotate: Vec2, delta_time: f32) {
@@ -256,6 +259,10 @@ impl CameraController {
             self.update_position();
         } else {
             self.update_focus();
+        }
+
+        if self.rotate_momentum.length_squared() < 1e-6 {
+            self.rotate_momentum = Vec2::ZERO;
         }
     }
 
@@ -318,6 +325,12 @@ impl CameraController {
             rotate_y *= self.fine_tuning_scalar;
         }
 
+        self.rotate_mode = if ui.input(|r| r.modifiers.command_only()) {
+            CameraRotateMode::Orbit
+        } else {
+            CameraRotateMode::PanTilt
+        };
+
         if rotate_x.abs() > 0.0 || rotate_y.abs() > 0.0 {
             self.handle_rotate(
                 Vec2::new(rotate_x, rotate_y) * 20.0,
@@ -357,12 +370,6 @@ impl CameraController {
 
         let movement = Vec3A::new(movement.x, movement.y, 0.0);
 
-        self.rotate_mode = if ui.input(|r| r.modifiers.command_only()) {
-            CameraRotateMode::Orbit
-        } else {
-            CameraRotateMode::PanTilt
-        };
-
         self.check_for_dolly(ui, delta_time);
         self.check_for_pan_tilt(ui, delta_time);
         self.rotate_dolly_and_zoom(movement, rotate, scrolled, delta_time.as_secs_f32());
@@ -370,8 +377,8 @@ impl CameraController {
         self.dirty = scrolled.abs() > 0.0
             || movement.length_squared() > 0.0
             || rotate.length_squared() > 0.0
-            || self.dolly_momentum.length_squared() > 0.001
-            || self.rotate_momentum.length_squared() > 0.001
+            || self.dolly_momentum.length_squared() > 1e-6
+            || self.rotate_momentum.length_squared() > 1e-6
             || self.dirty;
 
         rect
