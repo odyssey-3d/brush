@@ -16,7 +16,7 @@ impl Grid {
             size,
             cell_size,
             color: Color32::DARK_GRAY,
-            highlight_color: Color32::WHITE,
+            highlight_color: Color32::from_gray(117),
         }
     }
     pub fn with_color(self, color: Color32) -> Self {

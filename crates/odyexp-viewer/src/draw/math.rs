@@ -12,7 +12,6 @@ pub(crate) fn world_to_screen(viewport: Rect, mvp: Mat4, pos: Vec3) -> Option<Po
     }
 
     pos /= pos.w;
-    pos.y *= 1.0;
 
     let center = viewport.center();
 

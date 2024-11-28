@@ -87,6 +87,8 @@ impl ViewerContext {
 
         let controls = CameraController::new(
             cam_settings.radius,
+            cam_settings.pitch,
+            cam_settings.yaw,
             cam_settings.radius_range,
             cam_settings.yaw_range,
             cam_settings.pitch_range,

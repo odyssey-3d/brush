@@ -7,6 +7,8 @@ use glam::{Affine3A, EulerRot, Quat, Vec2, Vec3A};
 pub(crate) struct CameraSettings {
     pub focal: f64,
     pub radius: f32,
+    pub yaw: f32,
+    pub pitch: f32,
 
     pub yaw_range: Range<f32>,
     pub pitch_range: Range<f32>,
@@ -23,7 +25,22 @@ pub(crate) fn parse_camera_settings(
     let radius = search_params
         .get("radius")
         .and_then(|f| f.parse().ok())
-        .unwrap_or(4.0);
+        .unwrap_or(10.0);
+
+    let yaw = search_params
+        .get("yaw_deg")
+        .and_then(|f| f.parse::<f32>().ok())
+        .map(|d| d.to_radians())
+        .unwrap_or(-45.0);
+    let yaw = yaw / 180.0 * std::f32::consts::PI;
+
+    let pitch = search_params
+        .get("pitch_deg")
+        .and_then(|f| f.parse::<f32>().ok())
+        .map(|d| d.to_radians())
+        .unwrap_or(-30.0);
+    let pitch = pitch / 180.0 * std::f32::consts::PI;
+
     let min_radius = search_params
         .get("min_radius")
         .and_then(|f| f.parse().ok())
@@ -58,6 +75,8 @@ pub(crate) fn parse_camera_settings(
     let cam_settings = CameraSettings {
         focal,
         radius,
+        yaw,
+        pitch,
         radius_range: min_radius..max_radius,
         yaw_range: min_yaw..max_yaw,
         pitch_range: min_pitch..max_pitch,
@@ -106,15 +125,17 @@ pub(crate) struct CameraController {
 impl CameraController {
     pub fn new(
         radius: f32,
+        pitch: f32,
+        yaw: f32,
         radius_range: Range<f32>,
         yaw_range: Range<f32>,
         pitch_range: Range<f32>,
     ) -> Self {
-        let position = -Vec3A::Z * radius;
-        let base_position = position;
+        let rotation = Quat::from_rotation_y(yaw) * Quat::from_rotation_x(pitch);
+        let position = rotation * Vec3A::new(0.0, 0.0, -radius);
         Self {
-            yaw: 0.0,
-            pitch: 0.0,
+            yaw,
+            pitch,
             radius,
 
             position,
@@ -127,8 +148,8 @@ impl CameraController {
             dirty: false,
 
             rotate_mode: CameraRotateMode::PanTilt,
-            movement_speed: 0.2,
-            rotation_speed: 0.005,
+            movement_speed: 0.1,
+            rotation_speed: 0.001,
             zoom_speed: 0.002,
 
             dolly_momentum: Vec3A::ZERO,
@@ -136,9 +157,9 @@ impl CameraController {
 
             fine_tuning_scalar: 0.2,
 
-            base_position,
-            base_yaw: 0.0,
-            base_pitch: 0.0,
+            base_position: position,
+            base_yaw: yaw,
+            base_pitch: pitch,
             base_focus: Vec3A::ZERO,
             base_distance: radius,
         }
