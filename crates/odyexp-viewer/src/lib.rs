@@ -5,7 +5,7 @@ mod toolbar;
 
 mod load;
 
-pub(crate) mod app_context;
 pub(crate) mod camera_controller;
 
+pub mod app_context;
 pub mod viewer;

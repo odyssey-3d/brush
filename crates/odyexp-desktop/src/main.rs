@@ -2,6 +2,9 @@
 
 use tokio_with_wasm::alias as tokio;
 
+#[cfg(target_family = "wasm")]
+use wasm_bindgen::JsCast;
+
 fn main() {
     let wgpu_options = brush_ui::create_egui_options();
 
@@ -83,7 +86,7 @@ fn main() {
                         canvas,
                         web_options,
                         Box::new(|cc| {
-                            Ok(Box::new(brush_viewer::viewer::Viewer::new(cc, None, rec)))
+                            Ok(Box::new(odyexp_viewer::viewer::Viewer::new(cc, None, rec)))
                         }),
                     )
                     .await
@@ -98,7 +101,7 @@ mod embedded {
     use ::tokio::sync::mpsc::UnboundedSender;
     use tokio_with_wasm::alias as tokio;
 
-    use brush_viewer::viewer::UiControlMessage;
+    use odyexp_viewer::app_context::UiControlMessage;
     use wasm_bindgen::prelude::*;
 
     #[wasm_bindgen]
@@ -132,7 +135,7 @@ mod embedded {
                             ..Default::default()
                         },
                         Box::new(|cc| {
-                            Ok(Box::new(brush_viewer::viewer::Viewer::new(
+                            Ok(Box::new(odyexp_viewer::viewer::Viewer::new(
                                 cc,
                                 Some(url),
                                 rec,

@@ -29,23 +29,6 @@ impl Viewer {
             state.queue.clone(),
         );
 
-        cfg_if::cfg_if! {
-            if #[cfg(target_family = "wasm")] {
-                use tracing_subscriber::layer::SubscriberExt;
-
-                let subscriber = tracing_subscriber::registry().with(tracing_wasm::WASMLayer::new(Default::default()));
-                tracing::subscriber::set_global_default(subscriber)
-                    .expect("Failed to set tracing subscriber");
-            } else if #[cfg(feature = "tracing")] {
-                use tracing_subscriber::layer::SubscriberExt;
-                let subscriber = tracing_subscriber::registry()
-                    .with(tracing_tracy::TracyLayer::default())
-                    .with(sync_span::SyncLayer::new(device.clone()));
-                tracing::subscriber::set_global_default(subscriber)
-                    .expect("Failed to set tracing subscriber");
-            }
-        }
-
         #[cfg(target_family = "wasm")]
         let start_uri = start_uri.or(web_sys::window().and_then(|w| w.location().search().ok()));
         let search_params = parse_search(&start_uri.unwrap_or("".to_owned()));
