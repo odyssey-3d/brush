@@ -58,7 +58,7 @@ impl ScenePanel {
             is_loading: false,
             is_paused: false,
             renderer,
-            grid: Grid::new(16, 1.0).with_color(Color32::WHITE.gamma_multiply(0.2)),
+            grid: Grid::new(16, 0.5).with_color(Color32::from_gray(117).gamma_multiply(0.2)),
         }
     }
 
@@ -197,10 +197,8 @@ impl ScenePanel {
 
         let mvp = projection_matrix * view_matrix;
 
-        //for now hide the grid when splats are being shown maybe add setting for this later
-        if context.view_splats.is_empty() {
-            self.grid.draw(ui.painter(), rect, mvp);
-        } else {
+        self.grid.draw(ui.painter(), rect, mvp);
+        if !context.view_splats.is_empty() {
             self.draw_splats(ui, context, size, rect, &context.current_splats());
             self.show_splat_options(ui, context, delta_time);
         }
