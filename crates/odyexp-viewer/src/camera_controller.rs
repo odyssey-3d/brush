@@ -4,13 +4,74 @@ use std::ops::Range;
 use egui::Rect;
 use glam::{Affine3A, EulerRot, Quat, Vec2, Vec3A};
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum CameraRotateMode {
+pub(crate) struct CameraSettings {
+    pub focal: f64,
+    pub radius: f32,
+
+    pub yaw_range: Range<f32>,
+    pub pitch_range: Range<f32>,
+    pub radius_range: Range<f32>,
+}
+
+pub(crate) fn parse_camera_settings(
+    search_params: std::collections::HashMap<String, String>,
+) -> CameraSettings {
+    let focal = search_params
+        .get("focal")
+        .and_then(|f| f.parse().ok())
+        .unwrap_or(0.5);
+    let radius = search_params
+        .get("radius")
+        .and_then(|f| f.parse().ok())
+        .unwrap_or(4.0);
+    let min_radius = search_params
+        .get("min_radius")
+        .and_then(|f| f.parse().ok())
+        .unwrap_or(1.0);
+    let max_radius = search_params
+        .get("max_radius")
+        .and_then(|f| f.parse().ok())
+        .unwrap_or(100.0);
+
+    let min_yaw = search_params
+        .get("min_yaw")
+        .and_then(|f| f.parse::<f32>().ok())
+        .map(|d| d.to_radians())
+        .unwrap_or(f32::MIN);
+    let max_yaw = search_params
+        .get("max_yaw")
+        .and_then(|f| f.parse::<f32>().ok())
+        .map(|d| d.to_radians())
+        .unwrap_or(f32::MAX);
+
+    let min_pitch = search_params
+        .get("min_pitch")
+        .and_then(|f| f.parse::<f32>().ok())
+        .map(|d| d.to_radians())
+        .unwrap_or(f32::MIN);
+    let max_pitch = search_params
+        .get("max_pitch")
+        .and_then(|f| f.parse::<f32>().ok())
+        .map(|d| d.to_radians())
+        .unwrap_or(f32::MAX);
+
+    let cam_settings = CameraSettings {
+        focal,
+        radius,
+        radius_range: min_radius..max_radius,
+        yaw_range: min_yaw..max_yaw,
+        pitch_range: min_pitch..max_pitch,
+    };
+    cam_settings
+}
+
+#[derive(Debug, PartialEq)]
+pub(crate) enum CameraRotateMode {
     Orbit,
     PanTilt,
 }
 
-pub struct CameraController {
+pub(crate) struct CameraController {
     pub position: Vec3A,
     pub yaw: f32,
     pub pitch: f32,
@@ -79,7 +140,7 @@ impl CameraController {
             base_yaw: 0.0,
             base_pitch: 0.0,
             base_focus: Vec3A::ZERO,
-            base_distance: 10.0,
+            base_distance: radius,
         }
     }
 
@@ -257,12 +318,6 @@ impl CameraController {
             rotate_y *= self.fine_tuning_scalar;
         }
 
-        self.rotate_mode = if ui.input(|r| r.modifiers.command_only()) {
-            CameraRotateMode::Orbit
-        } else {
-            CameraRotateMode::PanTilt
-        };
-
         if rotate_x.abs() > 0.0 || rotate_y.abs() > 0.0 {
             self.handle_rotate(
                 Vec2::new(rotate_x, rotate_y) * 20.0,
@@ -301,6 +356,12 @@ impl CameraController {
         };
 
         let movement = Vec3A::new(movement.x, movement.y, 0.0);
+
+        self.rotate_mode = if ui.input(|r| r.modifiers.command_only()) {
+            CameraRotateMode::Orbit
+        } else {
+            CameraRotateMode::PanTilt
+        };
 
         self.check_for_dolly(ui, delta_time);
         self.check_for_pan_tilt(ui, delta_time);

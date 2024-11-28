@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::ops::Range;
 use std::sync::Arc;
 
 use brush_render::{camera::Camera, gaussian_splats::Splats};
@@ -14,6 +13,7 @@ use ::tokio::sync::mpsc::Receiver;
 use tokio::task;
 
 use crate::camera_controller::CameraController;
+use crate::camera_controller::CameraSettings;
 use crate::load::{process_loading_loop, DataSource};
 use tokio_stream::StreamExt;
 
@@ -56,15 +56,6 @@ impl UILayout {
             top_panel_height: 65.0,
         }
     }
-}
-
-pub(crate) struct CameraSettings {
-    pub focal: f64,
-    pub radius: f32,
-
-    pub yaw_range: Range<f32>,
-    pub pitch_range: Range<f32>,
-    pub radius_range: Range<f32>,
 }
 
 // TODO: Bit too much random shared state here.

@@ -2,7 +2,8 @@ use ::tokio::sync::mpsc::UnboundedReceiver;
 use eframe::egui;
 
 use crate::{
-    app_context::{parse_search, CameraSettings, UiControlMessage, ViewerContext, ViewerMessage},
+    app_context::{parse_search, UiControlMessage, ViewerContext, ViewerMessage},
+    camera_controller::parse_camera_settings,
     load::DataSource,
     main_panel::MainPanel,
     toolbar::Toolbar,
@@ -33,52 +34,7 @@ impl Viewer {
         let start_uri = start_uri.or(web_sys::window().and_then(|w| w.location().search().ok()));
         let search_params = parse_search(&start_uri.unwrap_or("".to_owned()));
 
-        let focal = search_params
-            .get("focal")
-            .and_then(|f| f.parse().ok())
-            .unwrap_or(0.5);
-        let radius = search_params
-            .get("radius")
-            .and_then(|f| f.parse().ok())
-            .unwrap_or(4.0);
-        let min_radius = search_params
-            .get("min_radius")
-            .and_then(|f| f.parse().ok())
-            .unwrap_or(1.0);
-        let max_radius = search_params
-            .get("max_radius")
-            .and_then(|f| f.parse().ok())
-            .unwrap_or(10.0);
-
-        let min_yaw = search_params
-            .get("min_yaw")
-            .and_then(|f| f.parse::<f32>().ok())
-            .map(|d| d.to_radians())
-            .unwrap_or(f32::MIN);
-        let max_yaw = search_params
-            .get("max_yaw")
-            .and_then(|f| f.parse::<f32>().ok())
-            .map(|d| d.to_radians())
-            .unwrap_or(f32::MAX);
-
-        let min_pitch = search_params
-            .get("min_pitch")
-            .and_then(|f| f.parse::<f32>().ok())
-            .map(|d| d.to_radians())
-            .unwrap_or(f32::MIN);
-        let max_pitch = search_params
-            .get("max_pitch")
-            .and_then(|f| f.parse::<f32>().ok())
-            .map(|d| d.to_radians())
-            .unwrap_or(f32::MAX);
-
-        let cam_settings = CameraSettings {
-            focal,
-            radius,
-            radius_range: min_radius..max_radius,
-            yaw_range: min_yaw..max_yaw,
-            pitch_range: min_pitch..max_pitch,
-        };
+        let cam_settings = parse_camera_settings(search_params);
         let mut context = ViewerContext::new(device.clone(), cc.egui_ctx.clone(), cam_settings);
 
         let mut start_url = None;
