@@ -59,13 +59,12 @@ impl ScenePanel {
         &mut self,
         ui: &mut egui::Ui,
         context: &ViewerContext,
+        size: glam::UVec2,
         rect: Rect,
         splats: &Splats<Backend>,
     ) {
-        // If this viewport is re-rendering.
-        if ui.ctx().has_requested_repaint() && self.dirty {
+        if ui.ctx().has_requested_repaint() && size.x > 0 && size.y > 0 && self.dirty {
             let _span = trace_span!("Render splats").entered();
-            let size = glam::uvec2(1024, 1024);
             let (img, _) = splats.render(&context.camera, size, true);
             self.backbuffer.update_texture(img, self.renderer.clone());
             self.dirty = false;
@@ -183,6 +182,7 @@ impl ScenePanel {
         let size = glam::uvec2(size.x.round() as u32, size.y.round() as u32);
         let rect = context.controls.handle_user_input(ui, size, delta_time);
 
+        self.dirty |= context.controls.dirty;
         context.update_camera();
 
         context.controls.dirty = false;
@@ -191,7 +191,7 @@ impl ScenePanel {
         const FPS: usize = 24;
         let frame = ((context.frame * FPS as f32).floor() as usize) % context.view_splats.len();
 
-        self.draw_splats(ui, context, rect, &context.view_splats[frame]);
+        self.draw_splats(ui, context, size, rect, &context.view_splats[frame]);
         self.show_splat_options(ui, context, delta_time);
     }
 }
