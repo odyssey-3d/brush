@@ -102,8 +102,8 @@ impl ScenePanel {
         ui.horizontal(|ui| {
             if self.is_loading {
                 ui.horizontal(|ui| {
-                    ui.label("Loading... Please wait.");
-                    ui.spinner();
+                    ui.label("Loading...");
+                    ui.add(egui::Spinner::new().color(egui::Color32::WHITE));
                 });
             }
 

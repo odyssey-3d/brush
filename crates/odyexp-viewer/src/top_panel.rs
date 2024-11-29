@@ -1,6 +1,6 @@
 use eframe::egui;
 
-use crate::app_context::{UiControlMessage, AppContext, AppMessage};
+use crate::app_context::{AppContext, AppMessage, UiControlMessage};
 
 pub(crate) struct TopPanel {
     frame: egui::Frame,
@@ -131,11 +131,15 @@ impl TopPanel {
                             };
 
                             if self.is_loading {
-                                let button_pos =
-                                    egui::pos2(button_pos.x - button_size.x - margin, margin);
+                                let button_pos = egui::pos2(
+                                    button_pos.x - button_size.x - margin,
+                                    0.5 * button_size.y,
+                                );
                                 ui.put(
                                     egui::Rect::from_min_size(button_pos, button_size),
-                                    egui::Spinner::new(),
+                                    egui::Spinner::new()
+                                        .size(button_size.x)
+                                        .color(egui::Color32::WHITE),
                                 );
                             }
                         });
