@@ -1,6 +1,6 @@
 use eframe::egui;
 
-use crate::app_context::{UiControlMessage, ViewerContext, ViewerMessage};
+use crate::app_context::{UiControlMessage, AppContext, AppMessage};
 
 pub(crate) struct TopPanel {
     frame: egui::Frame,
@@ -22,19 +22,19 @@ impl TopPanel {
         }
     }
 
-    pub(crate) fn on_message(&mut self, message: &ViewerMessage, _context: &mut ViewerContext) {
+    pub(crate) fn on_message(&mut self, message: &AppMessage, _context: &mut AppContext) {
         match message {
-            ViewerMessage::StartLoading { .. } => {
+            AppMessage::StartLoading { .. } => {
                 self.is_loading = true;
             }
-            ViewerMessage::DoneLoading => {
+            AppMessage::DoneLoading => {
                 self.is_loading = false;
             }
             _ => {}
         }
     }
 
-    pub fn show(&mut self, app_context: &mut ViewerContext) {
+    pub fn show(&mut self, app_context: &mut AppContext) {
         let panel_height = app_context.ui_layout.top_panel_height;
 
         let ctx = app_context.egui_ctx.clone();

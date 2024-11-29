@@ -18,7 +18,7 @@ use egui::{Color32, Rect};
 
 use web_time::Instant;
 
-use crate::app_context::{ViewerContext, ViewerMessage};
+use crate::app_context::{AppContext, AppMessage};
 
 use crate::draw::Grid;
 
@@ -65,7 +65,7 @@ impl ScenePanel {
     pub(crate) fn draw_splats(
         &mut self,
         ui: &mut egui::Ui,
-        context: &ViewerContext,
+        context: &AppContext,
         size: glam::UVec2,
         rect: Rect,
         splats: &Splats<Backend>,
@@ -96,7 +96,7 @@ impl ScenePanel {
     fn show_splat_options(
         &mut self,
         ui: &mut egui::Ui,
-        context: &ViewerContext,
+        context: &AppContext,
         delta_time: Duration,
     ) -> egui::InnerResponse<()> {
         ui.horizontal(|ui| {
@@ -130,33 +130,33 @@ impl ScenePanel {
         })
     }
 
-    pub(crate) fn on_message(&mut self, message: &ViewerMessage, _context: &mut ViewerContext) {
+    pub(crate) fn on_message(&mut self, message: &AppMessage, _context: &mut AppContext) {
         self.dirty = true;
 
         match message {
-            ViewerMessage::NewSource => {
+            AppMessage::NewSource => {
                 self.is_paused = false;
                 self.is_loading = false;
                 self.err = None;
             }
-            ViewerMessage::DoneLoading => {
+            AppMessage::DoneLoading => {
                 self.is_loading = false;
             }
-            ViewerMessage::StartLoading { filename: _ } => {
+            AppMessage::StartLoading { filename: _ } => {
                 self.is_loading = true;
             }
-            ViewerMessage::ViewSplats {
+            AppMessage::ViewSplats {
                 up_axis: _,
                 splats: _,
                 frame: _,
             } => {}
-            ViewerMessage::Error(e) => {
+            AppMessage::Error(e) => {
                 self.err = Some(e.clone());
             } // _ => {}
         }
     }
 
-    pub(crate) fn show(&mut self, ui: &mut egui::Ui, context: &mut ViewerContext) {
+    pub(crate) fn show(&mut self, ui: &mut egui::Ui, context: &mut AppContext) {
         let cur_time = Instant::now();
         let delta_time = self
             .last_draw

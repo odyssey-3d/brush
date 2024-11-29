@@ -11,7 +11,7 @@ use tokio_stream::{Stream, StreamExt};
 
 use burn_wgpu::WgpuDevice;
 
-use crate::app_context::ViewerMessage;
+use crate::app_context::AppMessage;
 
 #[derive(Debug)]
 pub enum DataSource {
@@ -54,9 +54,9 @@ impl DataSource {
 pub(crate) fn process_loading_loop(
     source: DataSource,
     device: WgpuDevice,
-) -> Pin<Box<impl Stream<Item = anyhow::Result<ViewerMessage>>>> {
+) -> Pin<Box<impl Stream<Item = anyhow::Result<AppMessage>>>> {
     let stream = try_fn_stream(|emitter| async move {
-        let _ = emitter.emit(ViewerMessage::NewSource).await;
+        let _ = emitter.emit(AppMessage::NewSource).await;
 
         // Small hack to peek some bytes: Read them
         // and add them at the start again.
@@ -70,7 +70,7 @@ pub(crate) fn process_loading_loop(
         if peek.starts_with("ply".as_bytes()) {
             log::info!("Attempting to load data as .ply data");
 
-            let _ = emitter.emit(ViewerMessage::StartLoading { filename }).await;
+            let _ = emitter.emit(AppMessage::StartLoading { filename }).await;
 
             let subsample = None; // Subsampling a trained ply doesn't really make sense.
             let splat_stream = splat_import::load_splat_from_ply(data, subsample, device.clone());
@@ -80,7 +80,7 @@ pub(crate) fn process_loading_loop(
             while let Some(message) = splat_stream.next().await {
                 let message = message?;
                 emitter
-                    .emit(ViewerMessage::ViewSplats {
+                    .emit(AppMessage::ViewSplats {
                         up_axis: message.meta.up_axis,
                         splats: Box::new(message.splats),
                         frame: message.meta.current_frame,
@@ -88,7 +88,7 @@ pub(crate) fn process_loading_loop(
                     .await;
             }
 
-            emitter.emit(ViewerMessage::DoneLoading).await;
+            emitter.emit(AppMessage::DoneLoading).await;
         } else if peek.starts_with("<!DOCTYPE html>".as_bytes()) {
             anyhow::bail!("Failed to download data (are you trying to download from Google Drive? You might have to use the proxy.")
         } else {

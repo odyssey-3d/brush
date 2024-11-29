@@ -5,7 +5,7 @@ use egui::epaint::mutex::RwLock as EguiRwLock;
 use egui::Color32;
 
 use crate::{
-    app_context::{ViewerContext, ViewerMessage},
+    app_context::{AppContext, AppMessage},
     scene_panel::ScenePanel,
 };
 
@@ -33,11 +33,11 @@ impl MainPanel {
         }
     }
 
-    pub(crate) fn on_message(&mut self, message: &ViewerMessage, context: &mut ViewerContext) {
+    pub(crate) fn on_message(&mut self, message: &AppMessage, context: &mut AppContext) {
         self.scene.on_message(message, context);
     }
 
-    pub fn show(&mut self, app_context: &mut ViewerContext) {
+    pub fn show(&mut self, app_context: &mut AppContext) {
         let ctx = &app_context.egui_ctx.clone();
         egui::CentralPanel::default()
             .frame(self.frame)

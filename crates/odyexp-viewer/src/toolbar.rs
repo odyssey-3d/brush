@@ -1,7 +1,7 @@
 use eframe::egui;
 use egui::Color32;
 
-use crate::app_context::{UiControlMessage, ViewerContext, ViewerMessage};
+use crate::app_context::{UiControlMessage, AppContext, AppMessage};
 
 pub(crate) struct Toolbar {
     frame: egui::Frame,
@@ -21,9 +21,9 @@ impl Toolbar {
         }
     }
 
-    pub(crate) fn on_message(&mut self, _message: &ViewerMessage, _context: &mut ViewerContext) {}
+    pub(crate) fn on_message(&mut self, _message: &AppMessage, _context: &mut AppContext) {}
 
-    pub fn show(&mut self, app_context: &mut ViewerContext) {
+    pub fn show(&mut self, app_context: &mut AppContext) {
         let top_panel_height = app_context.ui_layout.top_panel_height;
 
         let ctx = &app_context.egui_ctx.clone();
@@ -68,7 +68,7 @@ impl Toolbar {
 
     fn draw_camera_tools(
         &mut self,
-        app_context: &mut ViewerContext,
+        app_context: &mut AppContext,
         position: egui::Pos2,
         outer_margin: egui::Vec2,
         margin: f32,

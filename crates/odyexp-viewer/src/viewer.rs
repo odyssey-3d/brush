@@ -2,7 +2,7 @@ use ::tokio::sync::mpsc::UnboundedReceiver;
 use eframe::egui;
 
 use crate::{
-    app_context::{parse_search, UiControlMessage, ViewerContext, ViewerMessage},
+    app_context::{parse_search, UiControlMessage, AppContext, AppMessage},
     camera_controller::parse_camera_settings,
     main_panel::MainPanel,
     toolbar::Toolbar,
@@ -10,7 +10,7 @@ use crate::{
 };
 
 pub struct Viewer {
-    app_context: ViewerContext,
+    app_context: AppContext,
     main_panel: MainPanel,
     top_panel: TopPanel,
     toolbar: Toolbar,
@@ -34,7 +34,7 @@ impl Viewer {
         let search_params = parse_search(&start_uri.unwrap_or("".to_owned()));
 
         let cam_settings = parse_camera_settings(search_params);
-        let context = ViewerContext::new(
+        let context = AppContext::new(
             device.clone(),
             cc.egui_ctx.clone(),
             cam_settings,
@@ -96,7 +96,7 @@ impl eframe::App for Viewer {
 
             for message in messages {
                 match message.clone() {
-                    ViewerMessage::ViewSplats {
+                    AppMessage::ViewSplats {
                         up_axis,
                         splats,
                         frame,
@@ -107,7 +107,7 @@ impl eframe::App for Viewer {
                         self.app_context.view_splats.push(*splats.clone());
                         self.app_context.frame = frame as f32 - 0.5;
                     }
-                    ViewerMessage::StartLoading { filename } => {
+                    AppMessage::StartLoading { filename } => {
                         self.app_context.filename = Some(filename);
                         self.app_context.view_splats = vec![];
                     }

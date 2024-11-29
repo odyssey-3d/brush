@@ -29,7 +29,7 @@ pub enum UiControlMessage {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) enum ViewerMessage {
+pub(crate) enum AppMessage {
     NewSource,
     StartLoading {
         filename: String,
@@ -64,7 +64,7 @@ impl UILayout {
 }
 
 // TODO: Bit too much random shared state here.
-pub(crate) struct ViewerContext {
+pub(crate) struct AppContext {
     pub model_transform: Affine3A,
 
     pub device: WgpuDevice,
@@ -73,7 +73,7 @@ pub(crate) struct ViewerContext {
     pub camera: Camera,
     pub controls: CameraController,
 
-    pub process_messages_receiver: Option<Receiver<ViewerMessage>>,
+    pub process_messages_receiver: Option<Receiver<AppMessage>>,
 
     pub ui_control_receiver: UnboundedReceiver<UiControlMessage>,
     pub ui_control_sender: UnboundedSender<UiControlMessage>,
@@ -85,7 +85,7 @@ pub(crate) struct ViewerContext {
     pub ui_layout: UILayout,
 }
 
-impl ViewerContext {
+impl AppContext {
     pub(crate) fn new(
         device: WgpuDevice,
         ctx: egui::Context,
@@ -183,7 +183,7 @@ impl ViewerContext {
                 Ok(m) => m,
                 Err(e) => {
                     log::error!("Err: {:?}", e);
-                    ViewerMessage::Error(Arc::new(e))
+                    AppMessage::Error(Arc::new(e))
                 }
             });
 
