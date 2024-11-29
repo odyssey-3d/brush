@@ -185,11 +185,8 @@ impl ScenePanel {
         self.dirty |= self.last_size != size;
 
         let viewport = rect;
-        let eye = context.controls.position;
-        let focus = context.controls.focus;
-        let view_matrix = glam::Mat4::look_at_lh(eye.into(), focus.into(), glam::Vec3::Y);
-        // let view_matrix = context.camera.world_to_local();
-        let projection_matrix = glam::Mat4::perspective_infinite_reverse_lh(
+        let view_matrix = context.camera.world_to_local();
+        let projection_matrix = glam::Mat4::perspective_infinite_lh(
             context.camera.fov_y as f32,
             (viewport.width() / viewport.height()).into(),
             0.1,
@@ -199,7 +196,9 @@ impl ScenePanel {
 
         self.grid.draw(ui.painter(), rect, mvp);
         if !context.view_splats.is_empty() {
-            self.draw_splats(ui, context, size, rect, &context.current_splats());
+            if let Some(splats) = context.current_splats() {
+                self.draw_splats(ui, context, size, rect, splats);
+            }
             self.show_splat_options(ui, context, delta_time);
         }
     }

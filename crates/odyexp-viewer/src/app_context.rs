@@ -22,6 +22,7 @@ use brush_dataset::splat_export;
 type Backend = Wgpu;
 
 pub enum UiControlMessage {
+    PickFile,
     LoadData(String),
     SaveSplats,
     ResetCamera,
@@ -181,7 +182,7 @@ impl ViewerContext {
             let mut stream = process_loading_loop(source, device).map(|m| match m {
                 Ok(m) => m,
                 Err(e) => {
-                    println!("Err: {:?}", e);
+                    log::error!("Err: {:?}", e);
                     ViewerMessage::Error(Arc::new(e))
                 }
             });
@@ -237,11 +238,16 @@ impl ViewerContext {
     pub(crate) fn process_control_messages(&mut self) {
         while let Ok(m) = self.ui_control_receiver.try_recv() {
             match m {
+                UiControlMessage::PickFile => {
+                    self.load_splats_from_ply(DataSource::PickFile);
+                }
                 UiControlMessage::LoadData(url) => {
                     self.load_splats_from_ply(DataSource::Url(url.to_owned()));
                 }
                 UiControlMessage::SaveSplats => {
-                    self.save_splats_to_ply(self.current_splats().clone());
+                    if let Some(splats) = self.current_splats() {
+                        self.save_splats_to_ply(splats.clone());
+                    }
                 }
                 UiControlMessage::ResetCamera => {
                     self.reset_camera();
@@ -250,10 +256,10 @@ impl ViewerContext {
         }
     }
 
-    pub(crate) fn current_splats(&self) -> &Splats<Wgpu> {
+    pub(crate) fn current_splats(&self) -> Option<&Splats<Wgpu>> {
         const FPS: usize = 24;
         let frame: usize = ((self.frame * FPS as f32).floor() as usize) % self.view_splats.len();
-        self.view_splats.get(frame).unwrap()
+        self.view_splats.get(frame)
     }
 }
 

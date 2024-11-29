@@ -4,5 +4,9 @@ target = "crates/odyexp-desktop/index.html"
 # The output dir for all final assets.
 dist = "trunk_dist"
 # The public URL from which assets are to be served.
-public_url = "/explorer"
+public_url = "/"
+
+
+[watch]
+watch = ["crates/odyexp-viewer/src", "crates/odyexp-desktop/assets"]
 

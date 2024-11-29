@@ -4,7 +4,6 @@ use eframe::egui;
 use crate::{
     app_context::{parse_search, UiControlMessage, ViewerContext, ViewerMessage},
     camera_controller::parse_camera_settings,
-    load::DataSource,
     main_panel::MainPanel,
     toolbar::Toolbar,
     top_panel::TopPanel,
@@ -35,7 +34,7 @@ impl Viewer {
         let search_params = parse_search(&start_uri.unwrap_or("".to_owned()));
 
         let cam_settings = parse_camera_settings(search_params);
-        let mut context = ViewerContext::new(
+        let context = ViewerContext::new(
             device.clone(),
             cc.egui_ctx.clone(),
             cam_settings,
@@ -47,15 +46,23 @@ impl Viewer {
             if let Some(window) = web_sys::window() {
                 if let Ok(search) = window.location().search() {
                     if let Ok(search_params) = web_sys::UrlSearchParams::new_with_str(&search) {
-                        let url = search_params.get("url");
-                        start_url = url;
+                        // this is from brush's url string format
+                        if let Some(url) = search_params.get("url") {
+                            start_url = Some(url.to_owned());
+                        }
+                        //this is from our url string format
+                        if let Some(ply_url) = search_params.get("ply") {
+                            start_url = Some(ply_url.to_owned());
+                        }
                     }
                 }
             }
         }
 
         if let Some(start_url) = start_url {
-            context.load_splats_from_ply(DataSource::Url(start_url.to_owned()));
+            let _ = context
+                .ui_control_sender
+                .send(UiControlMessage::LoadData(start_url.to_owned()));
         }
 
         let main_panel = MainPanel::new(

@@ -141,7 +141,6 @@ impl Toolbar {
                 )
                 .clicked()
             {
-                println!("download button clicked");
             };
             ui.allocate_space(egui::vec2(toolbar_width, outer_margin.y));
 

@@ -1,9 +1,6 @@
 use eframe::egui;
 
-use crate::{
-    app_context::{UiControlMessage, ViewerContext, ViewerMessage},
-    load::DataSource,
-};
+use crate::app_context::{UiControlMessage, ViewerContext, ViewerMessage};
 
 pub(crate) struct TopPanel {
     frame: egui::Frame,
@@ -101,7 +98,9 @@ impl TopPanel {
                                 )
                                 .clicked()
                             {
-                                app_context.load_splats_from_ply(DataSource::PickFile);
+                                let _ = app_context
+                                    .ui_control_sender
+                                    .send(UiControlMessage::PickFile);
                             };
 
                             let button_pos =
@@ -126,7 +125,9 @@ impl TopPanel {
                                 )
                                 .clicked()
                             {
-                                let _ = app_context.ui_control_sender.send(UiControlMessage::SaveSplats);
+                                let _ = app_context
+                                    .ui_control_sender
+                                    .send(UiControlMessage::SaveSplats);
                             };
 
                             if self.is_loading {
