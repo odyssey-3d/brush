@@ -167,7 +167,6 @@ impl AppContext {
 
     pub(crate) fn load_splats_from_ply(&mut self, source: DataSource) {
         let device = self.device.clone();
-        log::info!("Start data load");
 
         // Create a small channel. We don't want 10 updated splats to be stuck in the queue eating up memory!
         // Bigger channels could mean the train loop spends less time waiting for the UI though.

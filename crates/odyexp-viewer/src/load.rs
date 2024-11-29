@@ -45,7 +45,19 @@ impl DataSource {
                 let response = reqwest::get(url.clone()).await?.bytes_stream();
                 let mapped = response
                     .map(|e| e.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e)));
-                Ok((Box::pin(tokio_util::io::StreamReader::new(mapped)), url))
+
+                //strip url so you only have the .ply
+                let stripped_url = url.split(".ply").next().unwrap().to_string();
+                let mut stripped_url = stripped_url.rsplit("/");
+                let mut filename = stripped_url.next().unwrap().to_string();
+                if let Some(second) = stripped_url.next() {
+                    filename = format!("{}/{}.ply", second, filename);
+                }
+
+                Ok((
+                    Box::pin(tokio_util::io::StreamReader::new(mapped)),
+                    filename.to_string(),
+                ))
             }
         }
     }
