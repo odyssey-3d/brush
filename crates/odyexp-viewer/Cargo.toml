@@ -36,13 +36,15 @@ rrfd.path = "../rrfd"
 
 async-fn-stream.workspace = true
 
-tokio_with_wasm = { workspace = true, features = ["rt"] }
-tokio = { workspace = true, features = ["io-util", "rt"] }
+tokio_with_wasm = { workspace = true, features = ["rt", "time"] }
+tokio = { workspace = true, features = ["io-util", "rt", "time"] }
 tokio-util.workspace = true
 tokio-stream.workspace = true
 
 reqwest.workspace = true
 urlencoding.workspace = true
+
+gamepads.workspace = true
 
 
 [target.'cfg(target_family = "wasm")'.dependencies]

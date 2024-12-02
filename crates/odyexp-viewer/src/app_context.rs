@@ -120,8 +120,6 @@ impl AppContext {
             // Loop until there are no more messages, processing is done.
             while let Some(m) = controller.recv().await {
                 ctx_spawn.request_repaint();
-
-                // Give back to the runtime for a second.
                 // This only really matters in the browser.
                 tokio::task::yield_now().await;
 
@@ -189,12 +187,7 @@ impl AppContext {
             // Loop until there are no more messages, processing is done.
             while let Some(m) = stream.next().await {
                 ctx.request_repaint();
-
-                // Give back to the runtime for a second.
-                // This only really matters in the browser.
                 tokio::task::yield_now().await;
-
-                // If channel is closed, bail.
                 if sender.send(m).await.is_err() {
                     break;
                 }

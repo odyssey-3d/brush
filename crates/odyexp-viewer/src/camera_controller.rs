@@ -145,7 +145,7 @@ impl CameraController {
             dirty: false,
 
             rotate_mode: CameraRotateMode::PanTilt,
-            movement_speed: 0.02,
+            movement_speed: 0.2,
             rotation_speed: 0.001,
             zoom_speed: 0.002,
 

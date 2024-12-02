@@ -176,7 +176,7 @@ impl ScenePanel {
         context.camera.fov_x = focal_to_fov(focal_y as f64, size.x as u32);
 
         let size = glam::uvec2(size.x.round() as u32, size.y.round() as u32);
-        let rect = context.controls.handle_user_input(ui, size, delta_time);
+        let rect = context.controls.handle_user_input(ui, size, Duration::from_millis(33));
 
         self.dirty |= context.controls.dirty;
         context.update_camera();

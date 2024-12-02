@@ -85,6 +85,7 @@ impl Viewer {
 
 impl eframe::App for Viewer {
     fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
+
         self.app_context.process_control_messages();
 
         if let Some(rec) = self.app_context.process_messages_receiver.as_mut() {
