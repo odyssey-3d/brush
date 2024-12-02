@@ -206,7 +206,7 @@ impl AppContext {
 
     pub(crate) fn save_splats_to_ply(&mut self, splats: Splats<Wgpu>) {
         let fut = async move {
-            let file = rrfd::save_file("export.ply").await;
+            let file = rrfd::save_file("odyssey-explorer-export.ply").await;
 
             // Not sure where/how to show this error if any.
             match file {
