@@ -1,6 +1,6 @@
 {
-  "name": "egui Template PWA",
-  "short_name": "egui-template-pwa",
+  "name": "Odyssey Explorer PWA",
+  "short_name": "odysey-explorer-pwa",
   "icons": [
     {
       "src": "./icon-256.png",
