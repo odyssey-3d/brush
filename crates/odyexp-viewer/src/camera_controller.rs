@@ -25,20 +25,20 @@ pub(crate) fn parse_camera_settings(
     let radius = search_params
         .get("radius")
         .and_then(|f| f.parse().ok())
-        .unwrap_or(10.0);
+        .unwrap_or(2.0);
 
     let yaw = search_params
         .get("yaw_deg")
         .and_then(|f| f.parse::<f32>().ok())
         .map(|d| d.to_radians())
-        .unwrap_or(-45.0);
+        .unwrap_or(0.0);
     let yaw = yaw / 180.0 * std::f32::consts::PI;
 
     let pitch = search_params
         .get("pitch_deg")
         .and_then(|f| f.parse::<f32>().ok())
         .map(|d| d.to_radians())
-        .unwrap_or(-30.0);
+        .unwrap_or(-10.0);
     let pitch = pitch / 180.0 * std::f32::consts::PI;
 
     let min_radius = search_params

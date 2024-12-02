@@ -58,7 +58,7 @@ impl ScenePanel {
             is_loading: false,
             is_paused: false,
             renderer,
-            grid: Grid::new(16, 0.5).with_color(Color32::from_gray(117).gamma_multiply(0.2)),
+            grid: Grid::new(16, 0.25).with_color(Color32::from_gray(117).gamma_multiply(0.2)),
         }
     }
 

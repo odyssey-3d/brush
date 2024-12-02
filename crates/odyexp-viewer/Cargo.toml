@@ -22,7 +22,6 @@ anyhow.workspace = true
 eframe.workspace = true
 web-sys.workspace = true
 egui.workspace = true
-egui_tiles.workspace = true
 egui_extras.workspace = true
 tracing.workspace = true
 wgpu.workspace = true
@@ -35,7 +34,6 @@ log.workspace = true
 cfg-if.workspace = true
 rrfd.path = "../rrfd"
 
-zip.workspace = true
 async-fn-stream.workspace = true
 
 tokio_with_wasm = { workspace = true, features = ["rt"] }

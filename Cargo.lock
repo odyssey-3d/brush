@@ -5053,7 +5053,6 @@ dependencies = [
  "eframe",
  "egui",
  "egui_extras",
- "egui_tiles",
  "glam",
  "humantime",
  "image",
@@ -5071,7 +5070,6 @@ dependencies = [
  "web-sys",
  "web-time",
  "wgpu",
- "zip 2.2.1",
 ]
 
 [[package]]
