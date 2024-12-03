@@ -18,15 +18,18 @@ use egui::{Color32, Rect};
 
 use web_time::Instant;
 
-use crate::app_context::{AppContext, AppMessage};
+use crate::{
+    app_context::{AppContext, AppMessage},
+    input::InputManager,
+};
 
 use crate::draw::Grid;
 
 type Backend = Wgpu;
 
 pub(crate) struct ScenePanel {
-    pub(crate) backbuffer: BurnTexture,
-    pub(crate) last_draw: Option<Instant>,
+    backbuffer: BurnTexture,
+    last_draw: Option<Instant>,
 
     frame: f32,
     err: Option<Arc<anyhow::Error>>,
@@ -40,6 +43,8 @@ pub(crate) struct ScenePanel {
     renderer: Arc<EguiRwLock<Renderer>>,
 
     grid: Grid,
+
+    input: InputManager,
 }
 
 impl ScenePanel {
@@ -59,6 +64,7 @@ impl ScenePanel {
             is_paused: false,
             renderer,
             grid: Grid::new(16, 0.25).with_color(Color32::from_gray(117).gamma_multiply(0.2)),
+            input: InputManager::new(),
         }
     }
 
@@ -130,7 +136,7 @@ impl ScenePanel {
         })
     }
 
-    pub(crate) fn on_message(&mut self, message: &AppMessage, _context: &mut AppContext) {
+    pub(crate) fn on_message(&mut self, message: &AppMessage, context: &mut AppContext) {
         self.dirty = true;
 
         match message {
@@ -154,6 +160,7 @@ impl ScenePanel {
                 self.err = Some(e.clone());
             } // _ => {}
         }
+        context.egui_ctx.request_repaint();
     }
 
     pub(crate) fn show(&mut self, ui: &mut egui::Ui, context: &mut AppContext) {
@@ -176,7 +183,7 @@ impl ScenePanel {
         context.camera.fov_x = focal_to_fov(focal_y as f64, size.x as u32);
 
         let size = glam::uvec2(size.x.round() as u32, size.y.round() as u32);
-        let rect = context.controls.handle_user_input(ui, size, Duration::from_millis(33));
+        let rect = self.input.update(context, ui, size, delta_time);
 
         self.dirty |= context.controls.dirty;
         context.update_camera();
@@ -200,6 +207,9 @@ impl ScenePanel {
                 self.draw_splats(ui, context, size, rect, splats);
             }
             self.show_splat_options(ui, context, delta_time);
+        }
+        if !self.is_loading {
+            context.egui_ctx.request_repaint();
         }
     }
 }

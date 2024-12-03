@@ -13,9 +13,10 @@ use ::tokio::sync::mpsc::{channel, Receiver, UnboundedReceiver, UnboundedSender}
 use tokio::task;
 use tokio_stream::StreamExt;
 
-use crate::camera_controller::CameraController;
-use crate::camera_controller::CameraSettings;
-use crate::load::{process_loading_loop, DataSource};
+use crate::{
+    camera_controller::{CameraController, CameraSettings},
+    load::{process_loading_loop, DataSource},
+};
 
 use brush_dataset::splat_export;
 

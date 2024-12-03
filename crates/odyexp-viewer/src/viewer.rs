@@ -2,7 +2,7 @@ use ::tokio::sync::mpsc::UnboundedReceiver;
 use eframe::egui;
 
 use crate::{
-    app_context::{parse_search, UiControlMessage, AppContext, AppMessage},
+    app_context::{parse_search, AppContext, AppMessage, UiControlMessage},
     camera_controller::parse_camera_settings,
     main_panel::MainPanel,
     toolbar::Toolbar,
@@ -85,7 +85,6 @@ impl Viewer {
 
 impl eframe::App for Viewer {
     fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
-
         self.app_context.process_control_messages();
 
         if let Some(rec) = self.app_context.process_messages_receiver.as_mut() {
