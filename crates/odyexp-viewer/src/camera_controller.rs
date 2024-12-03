@@ -2,7 +2,7 @@ use core::f32;
 use std::ops::Range;
 
 use egui::Rect;
-use glam::{Affine3A, EulerRot, Quat, Vec2, Vec3A};
+use glam::{Affine3A, Quat, Vec2, Vec3A};
 
 pub(crate) struct CameraSettings {
     pub focal: f64,
@@ -92,8 +92,7 @@ pub(crate) enum CameraRotateMode {
 
 pub(crate) struct CameraController {
     pub position: Vec3A,
-    pub yaw: f32,
-    pub pitch: f32,
+    pub rotation: Quat,
 
     pub focus: Vec3A,
     pub dirty: bool,
@@ -117,8 +116,7 @@ pub(crate) struct CameraController {
 
     base_focus: Vec3A,
     base_position: Vec3A,
-    base_yaw: f32,
-    base_pitch: f32,
+    base_rotation: Quat,
     base_distance: f32,
 }
 
@@ -134,11 +132,10 @@ impl CameraController {
         let rotation = Quat::from_rotation_y(yaw) * Quat::from_rotation_x(pitch);
         let position = rotation * Vec3A::new(0.0, 0.0, -radius);
         Self {
-            yaw,
-            pitch,
             radius,
 
             position,
+            rotation,
             focus: Vec3A::ZERO,
 
             radius_range,
@@ -158,8 +155,7 @@ impl CameraController {
             fine_tuning_scalar: 0.2,
 
             base_position: position,
-            base_yaw: yaw,
-            base_pitch: pitch,
+            base_rotation: rotation,
             base_focus: Vec3A::ZERO,
             base_distance: radius,
         }
@@ -177,18 +173,9 @@ impl CameraController {
         val
     }
 
-    #[allow(dead_code)]
-    fn clamp_rotation(quat: Quat, pitch_range: Range<f32>, yaw_range: Range<f32>) -> Quat {
-        let (pitch, yaw, _) = quat.to_euler(EulerRot::YXZ);
-        let clamped_pitch = Self::clamp_smooth(pitch, pitch_range);
-        let clamped_yaw = Self::clamp_smooth(yaw, yaw_range);
-        Quat::from_euler(EulerRot::YXZ, clamped_yaw, clamped_pitch, 0.0)
-    }
-
     pub fn reset(&mut self) {
         self.position = self.base_position;
-        self.yaw = self.base_yaw;
-        self.pitch = self.base_pitch;
+        self.rotation = self.base_rotation;
         self.radius = self.base_distance;
         self.focus = self.base_focus;
         self.dolly_momentum = Vec3A::ZERO;
@@ -198,8 +185,7 @@ impl CameraController {
 
     pub fn camera_has_moved(&self) -> bool {
         self.position != self.base_position
-            || self.yaw != self.base_yaw
-            || self.pitch != self.base_pitch
+            || self.rotation != self.base_rotation
             || self.radius != self.base_distance
             || self.focus != self.base_focus
     }
@@ -216,18 +202,12 @@ impl CameraController {
         self.handle_rotate(rotate, delta_time);
     }
 
-    fn get_rotation(&self) -> Quat {
-        Quat::from_rotation_y(self.yaw) * Quat::from_rotation_x(self.pitch)
-    }
-
     fn update_position(&mut self) {
-        let rotation = self.get_rotation();
-        self.position = self.focus + rotation * Vec3A::new(0.0, 0.0, -self.radius);
+        self.position = self.focus + self.rotation * Vec3A::new(0.0, 0.0, -self.radius);
     }
 
     fn update_focus(&mut self) {
-        let rotation = self.get_rotation();
-        self.focus = self.position - rotation * Vec3A::new(0.0, 0.0, -self.radius);
+        self.focus = self.position - self.rotation * Vec3A::new(0.0, 0.0, -self.radius);
     }
 
     fn zoom(&mut self, scroll: f32) {
@@ -238,8 +218,6 @@ impl CameraController {
     }
 
     pub fn dolly(&mut self, movement: Vec3A, delta_time: f32) {
-        let rotation = self.get_rotation();
-
         let damping = 0.0005f32.powf(delta_time);
         self.dolly_momentum += movement * self.movement_speed;
         self.dolly_momentum *= damping;
@@ -247,9 +225,9 @@ impl CameraController {
         let pan_velocity = self.dolly_momentum * delta_time;
         let scaled_pan = pan_velocity;
 
-        let right = rotation * Vec3A::X * -scaled_pan.x;
-        let up = rotation * Vec3A::Y * -scaled_pan.y;
-        let forward = rotation * Vec3A::Z * -scaled_pan.z;
+        let right = self.rotation * Vec3A::X * -scaled_pan.x;
+        let up = self.rotation * Vec3A::Y * -scaled_pan.y;
+        let forward = self.rotation * Vec3A::Z * -scaled_pan.z;
 
         let translation = (right + up + forward) * self.radius;
         self.focus += translation;
@@ -269,12 +247,12 @@ impl CameraController {
         let delta_x = rotate_velocity.x * std::f32::consts::PI * 2.0;
         let delta_y = rotate_velocity.y * std::f32::consts::PI;
 
-        let mut yaw = self.yaw;
-        let mut pitch = self.pitch;
-        yaw = Self::clamp_smooth(yaw + delta_x, self.yaw_range.clone());
-        pitch = Self::clamp_smooth(pitch - delta_y, self.pitch_range.clone());
-        self.yaw = yaw;
-        self.pitch = pitch;
+        let (yaw, pitch, roll) = self.rotation.to_euler(glam::EulerRot::YXZ);
+        let yaw = Self::clamp_smooth(yaw + delta_x, self.yaw_range.clone());
+        let pitch = Self::clamp_smooth(pitch - delta_y, self.pitch_range.clone());
+
+        self.rotation =
+            Quat::from_rotation_y(yaw) * Quat::from_rotation_x(pitch) * Quat::from_rotation_z(roll);
 
         if self.rotate_mode == CameraRotateMode::Orbit {
             self.update_position();
@@ -406,9 +384,6 @@ impl CameraController {
     }
 
     pub(crate) fn transform(&self) -> Affine3A {
-        Affine3A::from_rotation_translation(
-            Quat::from_rotation_y(self.yaw) * Quat::from_rotation_x(self.pitch),
-            self.position.into(),
-        )
+        Affine3A::from_rotation_translation(self.rotation, self.position.into())
     }
 }
