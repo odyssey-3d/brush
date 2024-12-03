@@ -1,0 +1,65 @@
+[package]
+name = "odyexp-viewer"
+edition.workspace = true
+version.workspace = true
+readme.workspace = true
+license.workspace = true
+
+[dependencies]
+# Brush deps.
+# brush-train.path = "../brush-train"
+brush-dataset.path = "../brush-dataset"
+brush-ui.path = "../brush-ui"
+brush-render.path = "../brush-render"
+
+# Workspace deps.
+glam.workspace = true
+burn.workspace = true
+burn-wgpu.workspace = true
+burn-jit.workspace = true
+
+image.workspace = true
+anyhow.workspace = true
+eframe.workspace = true
+web-sys.workspace = true
+egui.workspace = true
+egui_tiles.workspace = true
+egui_extras.workspace = true
+tracing.workspace = true
+wgpu.workspace = true
+rand.workspace = true
+
+web-time.workspace = true
+humantime.workspace = true
+
+log.workspace = true
+cfg-if.workspace = true
+rrfd.path = "../rrfd"
+
+zip.workspace = true
+async-fn-stream.workspace = true
+
+tokio_with_wasm = { workspace = true, features = ["rt"] }
+tokio = { workspace = true, features = ["io-util", "rt"] }
+tokio-util.workspace = true
+tokio-stream.workspace = true
+
+reqwest.workspace = true
+
+
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+rerun.workspace = true
+brush-rerun.path = "../brush-rerun"
+
+[target.'cfg(target_family = "wasm")'.dependencies]
+tracing-wasm.workspace = true
+web-sys.workspace = true
+
+[features]
+tracing = []
+
+[package.metadata.wasm-pack.profile.release.wasm-bindgen]
+debug-js-glue = false
+demangle-name-section = false
+dwarf-debug-info = false
+omit-default-module-path = false

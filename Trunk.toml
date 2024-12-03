@@ -1,7 +1,8 @@
 [build]
 # The index HTML file to drive the bundling process.
-target = "crates/brush-desktop/index.html"
+target = "crates/odyexp-desktop/index.html"
 # The output dir for all final assets.
 dist = "trunk_dist"
 # The public URL from which assets are to be served.
-public_url = "/brush-demo"
+public_url = "/explorer"
+

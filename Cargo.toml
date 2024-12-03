@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 members = ["crates/*"]
-default-members = ["crates/brush-desktop"]
+default-members = ["crates/odyexp-desktop"]
 
 [workspace.package]
 edition = "2021"

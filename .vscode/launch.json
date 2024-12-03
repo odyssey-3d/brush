@@ -7,6 +7,24 @@
         {
             "type": "lldb",
             "request": "launch",
+            "name": "Debug executable 'odyssey_explorer'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=odysysey_explorer",
+                    "--package=odyexp-desktop"
+                ],
+                "filter": {
+                    "name": "odysysey_explorer",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
             "name": "Debug executable 'brush'",
             "cargo": {
                 "args": [
