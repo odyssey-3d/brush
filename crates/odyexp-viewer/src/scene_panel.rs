@@ -208,8 +208,6 @@ impl ScenePanel {
             }
             self.show_splat_options(ui, context, delta_time);
         }
-        if !self.is_loading {
-            context.egui_ctx.request_repaint();
-        }
+        context.egui_ctx.request_repaint();
     }
 }

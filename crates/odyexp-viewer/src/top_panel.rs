@@ -22,7 +22,7 @@ impl TopPanel {
         }
     }
 
-    pub(crate) fn on_message(&mut self, message: &AppMessage, _context: &mut AppContext) {
+    pub(crate) fn on_message(&mut self, message: &AppMessage, context: &mut AppContext) {
         match message {
             AppMessage::StartLoading { .. } => {
                 self.is_loading = true;
@@ -32,6 +32,7 @@ impl TopPanel {
             }
             _ => {}
         }
+        context.egui_ctx.request_repaint();
     }
 
     pub fn show(&mut self, app_context: &mut AppContext) {
@@ -146,5 +147,8 @@ impl TopPanel {
                     },
                 );
             });
+        if self.is_loading {
+            app_context.egui_ctx.request_repaint();
+        }
     }
 }

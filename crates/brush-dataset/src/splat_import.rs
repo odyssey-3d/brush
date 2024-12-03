@@ -181,7 +181,7 @@ pub fn load_splat_from_ply<T: AsyncRead + Unpin + 'static, B: Backend>(
     // set up a reader, in this case a file.
     let mut reader = BufReader::new(reader);
 
-    let update_every = 25000;
+    let update_every = 1000;
     let _span = trace_span!("Read splats").entered();
 
     try_fn_stream(|emitter| async move {

@@ -16,12 +16,22 @@ pub(crate) struct CameraSettings {
     pub radius_range: Range<f32>,
 }
 
+#[derive(Debug, PartialEq)]
+enum ControlMode {
+    Normal,
+    SlowDown,
+    SpeedUp,
+}
+
 pub(crate) struct ControlSensitivity {
     pub movement: f32,
     pub rotation: f32,
     pub zoom: f32,
 
-    pub fine_tuning_scalar: f32,
+    pub max_movement: f32,
+
+    pub slow_down_scalar: f32,
+    pub speed_up_scalar: f32,
 
     pub gamepad_dolly_sensitivity: f32,
     pub gamepad_rotate_sensitivity: f32,
@@ -51,6 +61,8 @@ pub(crate) struct CameraController {
 
     dolly_momentum: Vec3A,
     rotate_momentum: Vec2,
+
+    control_mode: ControlMode,
 
     radius_range: Range<f32>,
     yaw_range: Range<f32>,
@@ -87,7 +99,9 @@ impl CameraController {
             dirty: false,
 
             rotate_mode: CameraRotateMode::PanTilt,
-            control_sensitivity: ControlSensitivity::new(0.1, 0.001, 0.002, 0.2),
+            control_sensitivity: ControlSensitivity::new(2.0, 0.001, 0.002, 0.5, 0.2, 5.0),
+
+            control_mode: ControlMode::Normal,
 
             dolly_momentum: Vec3A::ZERO,
             rotate_momentum: Vec2::ZERO,
@@ -159,6 +173,15 @@ impl CameraController {
         let damping = 0.0005f32.powf(delta_time);
         self.dolly_momentum += movement * self.control_sensitivity.movement;
         self.dolly_momentum *= damping;
+
+        let max_movement = if self.control_mode == ControlMode::SlowDown {
+            self.control_sensitivity.slow_down_scalar * self.control_sensitivity.max_movement
+        } else if self.control_mode == ControlMode::SpeedUp {
+            self.control_sensitivity.speed_up_scalar * self.control_sensitivity.max_movement
+        } else {
+            self.control_sensitivity.max_movement
+        };
+        self.dolly_momentum = self.dolly_momentum.clamp_length_max(max_movement);
 
         let pan_velocity = self.dolly_momentum * delta_time;
         let scaled_pan = pan_velocity;
@@ -341,21 +364,21 @@ impl CameraController {
             rotate += self.check_for_rotate_gamepad(&gamepad);
         }
 
-        let mut slow_down = false;
+        self.control_mode = ControlMode::Normal;
         if ui.input(|r| r.modifiers.shift_only()) {
-            slow_down = true;
+            self.control_mode = ControlMode::SlowDown;
+        } else if ui.input(|r| r.modifiers.alt) {
+            self.control_mode = ControlMode::SpeedUp;
         } else {
             for gamepad in gamepads.all() {
                 if gamepad.is_currently_pressed(gamepads::Button::FrontLeftLower) {
-                    slow_down = true;
+                    self.control_mode = ControlMode::SlowDown;
+                    break;
+                } else if gamepad.is_currently_pressed(gamepads::Button::FrontRightLower) {
+                    self.control_mode = ControlMode::SpeedUp;
                     break;
                 }
             }
-        }
-
-        if slow_down {
-            movement *= self.control_sensitivity.fine_tuning_scalar;
-            rotate *= self.control_sensitivity.fine_tuning_scalar;
         }
 
         self.rotate_dolly_and_zoom(movement, rotate, scrolled, delta_time.as_secs_f32());
@@ -445,12 +468,21 @@ pub(crate) fn parse_camera_settings(
 }
 
 impl ControlSensitivity {
-    pub fn new(movement: f32, rotation: f32, zoom: f32, fine_tuning_scalar: f32) -> Self {
+    pub fn new(
+        movement: f32,
+        rotation: f32,
+        zoom: f32,
+        max_movement: f32,
+        slow_down_scalar: f32,
+        speed_up_scalar: f32,
+    ) -> Self {
         Self {
             movement,
             rotation,
             zoom,
-            fine_tuning_scalar,
+            max_movement,
+            slow_down_scalar,
+            speed_up_scalar,
             gamepad_dolly_sensitivity: 0.1,
             gamepad_rotate_sensitivity: 5.0,
             key_dolly_sensitivity: 0.1,
