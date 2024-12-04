@@ -8,5 +8,5 @@ public_url = "/"
 
 
 [watch]
-watch = ["crates/odyexp-viewer/src", "crates/odyexp-desktop/assets"]
+watch = ["crates/odyexp-viewer/src", "crates/odyexp-desktop/assets", "crates/odyexp-io/src"]
 

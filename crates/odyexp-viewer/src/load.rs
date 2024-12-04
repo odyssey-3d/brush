@@ -2,7 +2,7 @@ use std::pin::Pin;
 
 use async_fn_stream::try_fn_stream;
 
-use brush_dataset::splat_import;
+use odyexp_io::splat_import;
 
 use ::tokio::io::AsyncReadExt;
 use ::tokio::{io::AsyncRead, io::BufReader};

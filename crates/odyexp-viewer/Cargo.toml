@@ -6,8 +6,10 @@ readme.workspace = true
 license.workspace = true
 
 [dependencies]
+odyexp-io.path = "../odyexp-io"
+
 # Brush deps.
-brush-dataset.path = "../brush-dataset"
+# brush-dataset.path = "../brush-dataset"
 brush-ui.path = "../brush-ui"
 brush-render.path = "../brush-render"
 
@@ -28,7 +30,6 @@ wgpu.workspace = true
 rand.workspace = true
 
 web-time.workspace = true
-humantime.workspace = true
 
 log.workspace = true
 cfg-if.workspace = true

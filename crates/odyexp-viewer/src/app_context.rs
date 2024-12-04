@@ -18,7 +18,7 @@ use crate::{
     load::{process_loading_loop, DataSource},
 };
 
-use brush_dataset::splat_export;
+use odyexp_io::splat_export;
 
 type Backend = Wgpu;
 
